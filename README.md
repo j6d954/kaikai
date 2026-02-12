@@ -30,3 +30,75 @@ After setup:
 1. Push commits to `main`.
 2. Workflow `Deploy Flutter Web to GitHub Pages` runs automatically.
 3. Open the deployed site URL from the Actions/Pages page.
+
+## Local Gateway Backend (Hide API Tokens)
+
+This repo now includes a minimal backend gateway at `server/main.dart`.
+Use it to keep insurer API tokens on the server side (not in Flutter Web).
+
+API contract doc:
+
+- `server/API_CONTRACT.md`
+
+### 1) Start gateway server (local)
+
+```bash
+PORT=8080 dart run server/main.dart
+```
+
+Optional env vars for upstream forwarding:
+
+- `INSURER_UPSTREAM_BASE_URL` (example: `https://your-api-gateway.example.com`)
+- `INSURER_UPSTREAM_TIMEOUT_MS` (default: `12000`)
+- `INSURER_UPSTREAM_MAX_ATTEMPTS` (default: `3`)
+- `INSURER_UPSTREAM_RETRY_BASE_DELAY_MS` (default: `250`)
+- `INSURER_API_TOKEN_DEFAULT`
+- `INSURER_API_TOKEN_CATHAY`, `INSURER_API_TOKEN_FUBON`, ...
+
+Health check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+### 2) Start gateway server (Docker)
+
+```bash
+docker build -f server/Dockerfile -t insurance-gateway .
+docker run --rm -p 8080:8080 --env-file server/.env.example insurance-gateway
+```
+
+### 3) Start Flutter Web with backend base URL
+
+```bash
+flutter run -d chrome --dart-define=INSURER_API_BASE_URL=http://localhost:8080
+```
+
+### Quick scripts
+
+```bash
+# Start gateway only
+./scripts/start_gateway.sh
+
+# Smoke test gateway
+./scripts/smoke_test_gateway.sh
+
+# Run web with gateway base URL
+./scripts/run_web_with_gateway.sh
+
+# Start gateway + run web in one command
+./scripts/dev_web_stack.sh
+```
+
+### Backend contract tests
+
+```bash
+flutter test test/server/gateway_contract_test.dart
+```
+
+Notes:
+
+- Frontend no longer sends insurer tokens.
+- Backend adds bearer token when calling upstream (if configured).
+- If upstream is not configured, backend returns a local fallback response.
+- Gateway logs JSON lines for request/outbound retry events.

@@ -25,6 +25,7 @@ final int _upstreamRetryBaseDelayMs = _readBoundedEnvInt(
 );
 
 int _requestSequence = 0;
+const int _maxCustomerReferenceLength = 128;
 
 const Map<String, List<String>> _insurerHintsByCode = {
   'cathay': ['國泰人壽', '國泰'],
@@ -40,6 +41,12 @@ const Map<String, List<String>> _insurerHintsByCode = {
   'pca': ['保誠人壽', '保誠'],
   'first_life': ['第一金人壽', '第一金'],
 };
+
+typedef _ValidationError = ({
+  String code,
+  String message,
+  Map<String, Object?> details,
+});
 
 Future<void> main() async {
   final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8080;
@@ -60,6 +67,7 @@ Future<void> main() async {
 Future<void> _handleRequest(HttpRequest request) async {
   _setCorsHeaders(request.response);
   final requestId = _nextRequestId();
+  request.response.headers.set('x-request-id', requestId);
   final stopwatch = Stopwatch()..start();
   var statusCode = HttpStatus.internalServerError;
   var route = 'unknown';
@@ -90,11 +98,11 @@ Future<void> _handleRequest(HttpRequest request) async {
         route = 'health';
         await respondJson(
           status: HttpStatus.ok,
-          body: {
+          body: _attachRequestId({
             'status': 'ok',
             'timestamp': DateTime.now().toUtc().toIso8601String(),
             'upstreamConfigured': _upstreamBaseUri != null,
-          },
+          }, requestId),
         );
         return;
       }
@@ -106,12 +114,42 @@ Future<void> _handleRequest(HttpRequest request) async {
           segments[3] == 'policies' &&
           segments[4] == 'discovery') {
         route = 'discovery';
-        final insurerCode = segments[2];
+        final insurerCode = segments[2].trim().toLowerCase();
+        if (!_insurerHintsByCode.containsKey(insurerCode)) {
+          await respondJson(
+            status: HttpStatus.notFound,
+            body: _buildErrorBody(
+              code: 'unsupported_insurer',
+              message: 'Unsupported insurer code: $insurerCode',
+              requestId: requestId,
+            ),
+          );
+          return;
+        }
+
         final payload = await _readJsonBody(request);
         if (payload == null) {
           await respondJson(
             status: HttpStatus.badRequest,
-            body: {'message': 'Invalid JSON body'},
+            body: _buildErrorBody(
+              code: 'invalid_json_body',
+              message: 'Invalid JSON body',
+              requestId: requestId,
+            ),
+          );
+          return;
+        }
+
+        final validationError = _validateDiscoveryPayload(payload);
+        if (validationError != null) {
+          await respondJson(
+            status: HttpStatus.badRequest,
+            body: _buildErrorBody(
+              code: validationError.code,
+              message: validationError.message,
+              requestId: requestId,
+              details: validationError.details,
+            ),
           );
           return;
         }
@@ -121,20 +159,32 @@ Future<void> _handleRequest(HttpRequest request) async {
           payload: payload,
           requestId: requestId,
         );
-        await respondJson(status: result.statusCode, body: result.body);
+        await respondJson(
+          status: result.statusCode,
+          body: _attachRequestId(result.body, requestId),
+        );
         return;
       }
 
       route = 'not_found';
       await respondJson(
         status: HttpStatus.notFound,
-        body: {'message': 'Not found'},
+        body: _buildErrorBody(
+          code: 'not_found',
+          message: 'Not found',
+          requestId: requestId,
+        ),
       );
     } catch (error) {
       route = 'error';
       await respondJson(
         status: HttpStatus.internalServerError,
-        body: {'message': 'Unhandled error', 'error': '$error'},
+        body: _buildErrorBody(
+          code: 'internal_error',
+          message: 'Unhandled error',
+          requestId: requestId,
+          details: {'error': '$error'},
+        ),
       );
     }
   } finally {
@@ -182,6 +232,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _handleDiscovery({
       statusCode: HttpStatus.ok,
       body: {
         'status': 'unavailable',
+        'code': 'token_not_configured',
         'note': 'Gateway token not configured for insurer code: $insurerCode',
         'policies': const <Object>[],
       },
@@ -208,6 +259,176 @@ Future<Map<String, dynamic>?> _readJsonBody(HttpRequest request) async {
   }
 }
 
+_ValidationError? _validateDiscoveryPayload(Map<String, dynamic> payload) {
+  final customerReferenceRaw = payload['customerReference'];
+  if (customerReferenceRaw is! String || customerReferenceRaw.trim().isEmpty) {
+    return (
+      code: 'invalid_payload',
+      message: 'Field "customerReference" is required and must be a string.',
+      details: {'field': 'customerReference'},
+    );
+  }
+  if (customerReferenceRaw.trim().length > _maxCustomerReferenceLength) {
+    return (
+      code: 'invalid_payload',
+      message:
+          'Field "customerReference" must be at most $_maxCustomerReferenceLength characters.',
+      details: {
+        'field': 'customerReference',
+        'maxLength': _maxCustomerReferenceLength,
+      },
+    );
+  }
+
+  final targetInsurersRaw = payload['targetInsurers'];
+  if (targetInsurersRaw != null && targetInsurersRaw is! List) {
+    return (
+      code: 'invalid_payload',
+      message: 'Field "targetInsurers" must be a list of strings.',
+      details: {'field': 'targetInsurers'},
+    );
+  }
+  if (targetInsurersRaw is List) {
+    for (var i = 0; i < targetInsurersRaw.length; i++) {
+      final item = targetInsurersRaw[i];
+      if (item is! String || item.trim().isEmpty) {
+        return (
+          code: 'invalid_payload',
+          message:
+              'Field "targetInsurers" must contain only non-empty strings.',
+          details: {'field': 'targetInsurers', 'index': i},
+        );
+      }
+    }
+  }
+
+  final knownPoliciesRaw = payload['knownPolicies'];
+  if (knownPoliciesRaw == null) {
+    return (
+      code: 'invalid_payload',
+      message: 'Field "knownPolicies" is required.',
+      details: {'field': 'knownPolicies'},
+    );
+  }
+  if (knownPoliciesRaw is! List) {
+    return (
+      code: 'invalid_payload',
+      message: 'Field "knownPolicies" must be a list.',
+      details: {'field': 'knownPolicies'},
+    );
+  }
+  for (var i = 0; i < knownPoliciesRaw.length; i++) {
+    if (knownPoliciesRaw[i] is! Map) {
+      return (
+        code: 'invalid_payload',
+        message: 'Field "knownPolicies" must contain only JSON objects.',
+        details: {'field': 'knownPolicies', 'index': i},
+      );
+    }
+  }
+
+  return null;
+}
+
+Map<String, dynamic> _buildErrorBody({
+  required String code,
+  required String message,
+  required String requestId,
+  Map<String, Object?>? details,
+}) {
+  final body = <String, dynamic>{
+    'code': code,
+    'message': message,
+    'requestId': requestId,
+  };
+  if (details != null && details.isNotEmpty) {
+    body['details'] = details;
+  }
+  return body;
+}
+
+Map<String, dynamic> _attachRequestId(
+  Map<String, dynamic> body,
+  String requestId,
+) {
+  if (body.containsKey('requestId')) return body;
+  return <String, dynamic>{...body, 'requestId': requestId};
+}
+
+Map<String, dynamic> _normalizeGatewayDiscoveryBody(
+  Map<String, dynamic> rawBody,
+) {
+  final normalizedStatus = _normalizeDiscoveryStatusValue(rawBody['status']);
+  final codeRaw = rawBody['code'];
+  final code = codeRaw is String && codeRaw.trim().isNotEmpty
+      ? codeRaw.trim()
+      : _defaultGatewayCodeForStatus(normalizedStatus);
+  final noteRaw = rawBody['note'];
+  final note = noteRaw is String && noteRaw.trim().isNotEmpty
+      ? noteRaw.trim()
+      : _defaultGatewayNoteForStatus(normalizedStatus);
+
+  final policiesRaw = rawBody['policies'];
+  final policies = policiesRaw is List ? List<Object?>.from(policiesRaw) : [];
+
+  return <String, dynamic>{
+    ...rawBody,
+    'status': normalizedStatus,
+    'code': code,
+    'note': note,
+    'policies': policies,
+  };
+}
+
+String _normalizeDiscoveryStatusValue(dynamic rawStatus) {
+  final status = (rawStatus as String?)?.trim().toLowerCase();
+  switch (status) {
+    case 'found':
+    case 'success':
+      return 'found';
+    case 'no_data':
+    case 'not_found':
+      return 'no_data';
+    case 'unavailable':
+      return 'unavailable';
+    case 'failed':
+    case 'error':
+      return 'failed';
+    default:
+      return 'failed';
+  }
+}
+
+String _defaultGatewayNoteForStatus(String status) {
+  switch (status) {
+    case 'found':
+      return 'API 回應成功';
+    case 'no_data':
+      return '未查得保單資料';
+    case 'unavailable':
+      return 'API 目前無法提供服務';
+    case 'failed':
+      return 'API 回應失敗';
+    default:
+      return 'API 回應失敗';
+  }
+}
+
+String _defaultGatewayCodeForStatus(String status) {
+  switch (status) {
+    case 'found':
+      return 'upstream_found';
+    case 'no_data':
+      return 'upstream_no_data';
+    case 'unavailable':
+      return 'upstream_unavailable';
+    case 'failed':
+      return 'upstream_failed';
+    default:
+      return 'upstream_failed';
+  }
+}
+
 Map<String, dynamic> _buildLocalFallbackResponse({
   required String insurerCode,
   required Map<String, dynamic> payload,
@@ -223,6 +444,7 @@ Map<String, dynamic> _buildLocalFallbackResponse({
   if (matched.isEmpty) {
     return {
       'status': 'no_data',
+      'code': 'local_fallback_no_data',
       'note': 'Gateway 未設定上游 API，且本機資料沒有符合保單',
       'policies': const <Object>[],
     };
@@ -230,6 +452,7 @@ Map<String, dynamic> _buildLocalFallbackResponse({
 
   return {
     'status': 'found',
+    'code': 'local_fallback_found',
     'note': 'Gateway 本機資料推估（未呼叫上游）',
     'policies': matched,
   };
@@ -286,6 +509,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
             statusCode: HttpStatus.badGateway,
             body: {
               'status': 'failed',
+              'code': 'upstream_invalid_response',
               'note': 'Upstream response format is invalid',
               'policies': const <Object>[],
             },
@@ -315,9 +539,10 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
           'statusCode': response.statusCode,
           'durationMs': timer.elapsedMilliseconds,
         });
+        final rawBodyMap = Map<String, dynamic>.from(decoded);
         return (
           statusCode: response.statusCode,
-          body: Map<String, dynamic>.from(decoded),
+          body: _normalizeGatewayDiscoveryBody(rawBodyMap),
         );
       } on TimeoutException {
         if (attempt < _upstreamMaxAttempts) {
@@ -337,6 +562,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
           statusCode: HttpStatus.gatewayTimeout,
           body: {
             'status': 'failed',
+            'code': 'upstream_timeout',
             'note': 'Gateway timeout while calling upstream',
             'policies': const <Object>[],
           },
@@ -359,6 +585,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
           statusCode: HttpStatus.badGateway,
           body: {
             'status': 'failed',
+            'code': 'upstream_connect_failed',
             'note': 'Gateway failed to connect upstream',
             'policies': const <Object>[],
           },
@@ -381,6 +608,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
           statusCode: HttpStatus.badGateway,
           body: {
             'status': 'failed',
+            'code': 'upstream_call_failed',
             'note': 'Gateway failed to call upstream',
             'policies': const <Object>[],
           },
@@ -392,6 +620,7 @@ Future<({int statusCode, Map<String, dynamic> body})> _proxyDiscovery({
       statusCode: HttpStatus.badGateway,
       body: {
         'status': 'failed',
+        'code': 'upstream_retries_exhausted',
         'note': 'Gateway retries exhausted',
         'policies': const <Object>[],
       },
