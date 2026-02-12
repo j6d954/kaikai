@@ -22,16 +22,30 @@ class InsuranceAdvisorApp extends StatelessWidget {
 
     return MaterialApp(
       title: '個人保險顧問',
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(textScaler: const TextScaler.linear(1.15)),
+          child: child!,
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: colorScheme,
         scaffoldBackgroundColor: const Color(0xFFEAF1FA),
         fontFamily: 'Noto Sans TC',
+        visualDensity: VisualDensity.comfortable,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
+          titleTextStyle: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F2F4D),
+          ),
         ),
         cardTheme: CardThemeData(
           color: const Color(0xF8FFFFFF),
@@ -46,11 +60,11 @@ class InsuranceAdvisorApp extends StatelessWidget {
           backgroundColor: const Color(0xF5FFFFFF),
           indicatorColor: const Color(0xFFCEE5FF),
           elevation: 0,
-          height: 68,
+          height: 80,
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             final selected = states.contains(WidgetState.selected);
             return TextStyle(
-              fontSize: 12,
+              fontSize: 15,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: selected
                   ? const Color(0xFF0C3F79)
@@ -63,6 +77,33 @@ class InsuranceAdvisorApp extends StatelessWidget {
           foregroundColor: Colors.white,
           elevation: 2,
           shape: StadiumBorder(),
+        ),
+        listTileTheme: const ListTileThemeData(
+          contentPadding: EdgeInsets.symmetric(horizontal: 4),
+          minVerticalPadding: 10,
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        sliderTheme: const SliderThemeData(
+          trackHeight: 7,
+          thumbShape: RoundSliderThumbShape(enabledThumbRadius: 12),
+          overlayShape: RoundSliderOverlayShape(overlayRadius: 20),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -77,39 +118,39 @@ class InsuranceAdvisorApp extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF0E5AA7), width: 1.5),
+            borderSide: const BorderSide(color: Color(0xFF0E5AA7), width: 1.8),
           ),
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
+            horizontal: 14,
+            vertical: 12,
           ),
         ),
         textTheme: ThemeData.light(useMaterial3: true).textTheme.copyWith(
           headlineSmall: const TextStyle(
-            fontSize: 30,
+            fontSize: 32,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.6,
             color: Color(0xFF10253D),
           ),
           titleLarge: const TextStyle(
-            fontSize: 22,
+            fontSize: 26,
             fontWeight: FontWeight.w800,
             color: Color(0xFF10253D),
           ),
           titleMedium: const TextStyle(
-            fontSize: 17,
+            fontSize: 20,
             fontWeight: FontWeight.w700,
             color: Color(0xFF183C61),
           ),
           bodyMedium: const TextStyle(
-            fontSize: 14,
+            fontSize: 17,
             height: 1.35,
-            color: Color(0xFF2A4057),
+            color: Color(0xFF20374E),
           ),
           bodySmall: const TextStyle(
-            fontSize: 12,
+            fontSize: 15,
             height: 1.35,
-            color: Color(0xFF58708C),
+            color: Color(0xFF3F5873),
           ),
         ),
       ),

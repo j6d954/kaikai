@@ -77,25 +77,45 @@ class ReminderNotificationService {
     if (!await initialize()) return false;
 
     try {
+      final permissionResults = <bool>[];
+
       final android = _plugin
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
-      await android?.requestNotificationsPermission();
+      final androidGranted = await android?.requestNotificationsPermission();
+      if (androidGranted != null) {
+        permissionResults.add(androidGranted);
+      }
 
       final ios = _plugin
           .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin
           >();
-      await ios?.requestPermissions(alert: true, badge: true, sound: true);
+      final iosGranted = await ios?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (iosGranted != null) {
+        permissionResults.add(iosGranted);
+      }
 
       final macos = _plugin
           .resolvePlatformSpecificImplementation<
             MacOSFlutterLocalNotificationsPlugin
           >();
-      await macos?.requestPermissions(alert: true, badge: true, sound: true);
+      final macosGranted = await macos?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (macosGranted != null) {
+        permissionResults.add(macosGranted);
+      }
 
-      return true;
+      if (permissionResults.isEmpty) return true;
+      return permissionResults.any((isGranted) => isGranted);
     } catch (_) {
       return false;
     }

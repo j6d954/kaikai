@@ -21,6 +21,12 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
   static const List<String> _policyTypes = ['壽險', '醫療險', '重大疾病險', '意外險', '失能險'];
 
   ProviderSubscription<AppState>? _appStateSubscription;
+  int? _draftAge;
+  int? _draftMonthlyBudget;
+  int? _draftAnnualIncome;
+  int? _draftFinancialBufferMonths;
+  int? _draftPaymentReminderWindowDays;
+  int? _draftExpiryReminderWindowDays;
 
   AppState get _appState => ref.read(appStateProvider);
   int get _selectedTab => _appState.selectedTab;
@@ -81,13 +87,12 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
     super.dispose();
   }
 
-  Future<void> _initializeSystemNotifications({
+  Future<bool> _initializeSystemNotifications({
     bool requestPermission = false,
   }) async {
-    if (!await ReminderNotificationService.instance.initialize()) return;
-    if (!requestPermission) return;
-    await ReminderNotificationService.instance.requestPermissions();
-    await _syncSystemReminderNotification();
+    if (!await ReminderNotificationService.instance.initialize()) return false;
+    if (!requestPermission) return true;
+    return ReminderNotificationService.instance.requestPermissions();
   }
 
   Future<void> _updateProfile(AppState Function(AppState current) updates) {
@@ -143,13 +148,41 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
   }
 
   Future<void> _triggerTestSystemNotification() async {
-    await _initializeSystemNotifications(requestPermission: true);
-    final sent = await ReminderNotificationService.instance
-        .showTestNotification();
+    final granted = await _initializeSystemNotifications(
+      requestPermission: true,
+    );
+    final sent = granted
+        ? await ReminderNotificationService.instance.showTestNotification()
+        : false;
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(sent ? '已發送測試通知' : '無法發送通知，請確認系統權限')),
+    );
+  }
+
+  Future<void> _handleSystemNotificationToggle(bool value) async {
+    if (value) {
+      final granted = await _initializeSystemNotifications(
+        requestPermission: true,
+      );
+      if (!mounted) return;
+      if (!granted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('未取得通知權限，請先在系統設定開啟通知')));
+        await _updateProfile(
+          (state) => state.copyWith(enableSystemNotifications: false),
+        );
+        return;
+      }
+    }
+
+    await _updateProfile(
+      (state) => state.copyWith(
+        enableSystemNotifications: value,
+        clearLastSystemNotificationDate: value,
+      ),
     );
   }
 
@@ -536,15 +569,15 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
   String get _currentPageSubtitle {
     switch (_selectedTab) {
       case 0:
-        return '快速掌握保障覆蓋率、缺口與提醒狀態。';
+        return '先看風險分數與完成度，再看需要補強的缺口。';
       case 1:
-        return '根據年齡、收入與家庭結構，調整建議保額。';
+        return '滑動和開關即可調整資料，系統會自動儲存。';
       case 2:
-        return '依預算和風險排序，給出可落地的規劃順序。';
+        return '先看推薦方案，再依序補足保障缺口。';
       case 3:
-        return '用同一組資料比較不同方案的保費與保障。';
+        return '重點看月繳保費和預算差額，快速選方案。';
       case 4:
-        return '集中管理保單、提醒設定與續保節點。';
+        return '在這裡新增保單、查看提醒與到期日期。';
       default:
         return '';
     }
@@ -565,6 +598,166 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
       default:
         return Icons.shield_outlined;
     }
+  }
+
+  String get _easyReadHint {
+    switch (_selectedTab) {
+      case 0:
+        return '先看整體狀態，再看哪個缺口最大。';
+      case 1:
+        return '依照個人狀況調整，資料會立即更新。';
+      case 2:
+        return '先用推薦方案，再慢慢微調。';
+      case 3:
+        return '先看預算差額，再比較保障高低。';
+      case 4:
+        return '保單新增後，提醒會自動幫你追蹤。';
+      default:
+        return '';
+    }
+  }
+
+  List<String> get _easyReadSteps {
+    switch (_selectedTab) {
+      case 0:
+        return const ['看「風險評分」和「保障完成度」。', '看哪一類保單缺口最大。', '再回到「評估」頁面調整資料。'];
+      case 1:
+        return const ['先調年齡與每月預算。', '再選扶養人數、房貸、是否已有保險。', '完成後去「建議」頁面看結果。'];
+      case 2:
+        return const ['先看推薦方案的月繳金額。', '再看優先補強順序。', '照順序補強，壓力會比較小。'];
+      case 3:
+        return const ['每列都可看月繳與預算差額。', '先挑預算內的方案。', '再比較保障總額高低。'];
+      case 4:
+        return const ['按右下角可新增保單。', '開啟繳費與到期提醒。', '定期看近期提醒避免漏繳。'];
+      default:
+        return const [];
+    }
+  }
+
+  int get _nextTabIndex => _selectedTab >= 4 ? 0 : _selectedTab + 1;
+
+  String get _nextTabLabel {
+    switch (_nextTabIndex) {
+      case 0:
+        return '保障全景';
+      case 1:
+        return '需求問卷';
+      case 2:
+        return '顧問建議';
+      case 3:
+        return '方案比較';
+      case 4:
+        return '保單管理';
+      default:
+        return '保障全景';
+    }
+  }
+
+  Widget _buildEasyReadGuideCard(BuildContext context) {
+    final steps = _easyReadSteps;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.menu_book_rounded,
+                  size: 22,
+                  color: Color(0xFF0E5AA7),
+                ),
+                const SizedBox(width: 8),
+                Text('長者易讀指引', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _easyReadHint,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            ...List.generate(steps.length, (index) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0x220E5AA7),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${index + 1}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0E5AA7),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(steps[index])),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepNavigatorCard(BuildContext context) {
+    final isLastStep = _selectedTab == 4;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          runSpacing: 10,
+          spacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.flag_circle_rounded,
+                  size: 20,
+                  color: Color(0xFF0E5AA7),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '目前進度：第 ${_selectedTab + 1} 步 / 5 步',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                _updateProfile(
+                  (state) => state.copyWith(selectedTab: _nextTabIndex),
+                );
+              },
+              icon: Icon(
+                isLastStep
+                    ? Icons.restart_alt_rounded
+                    : Icons.arrow_forward_rounded,
+              ),
+              label: Text(isLastStep ? '回到第一步：保障全景' : '下一步：$_nextTabLabel'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildPageScaffold(List<Widget> children) {
@@ -694,6 +887,10 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      _buildEasyReadGuideCard(context),
+                      const SizedBox(height: 12),
+                      _buildStepNavigatorCard(context),
+                      const SizedBox(height: 12),
                       ...children,
                     ],
                   ),
@@ -703,6 +900,74 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTodayFocusCard(BuildContext context) {
+    final reminders = _policyReminders;
+    final urgentCount = reminders.where((item) => item.daysLeft <= 0).length;
+    final upcomingCount = reminders.where((item) => item.daysLeft > 0).length;
+    final coverageCompletionPercent = (_coverageCompletionRate * 100).round();
+
+    late final IconData statusIcon;
+    late final Color statusColor;
+    late final String statusTitle;
+    late final String statusDetail;
+    late final String nextAction;
+
+    if (urgentCount > 0) {
+      statusIcon = Icons.warning_amber_rounded;
+      statusColor = const Color(0xFFC04A2E);
+      statusTitle = '今天有急件提醒';
+      statusDetail = '目前有 $urgentCount 筆需要優先處理的提醒。';
+      nextAction = '建議先到「保單管理」查看提醒內容。';
+    } else if (upcomingCount > 0) {
+      statusIcon = Icons.notifications_active_rounded;
+      statusColor = const Color(0xFF99630D);
+      statusTitle = '近期有提醒';
+      statusDetail = '接下來有 $upcomingCount 筆提醒即將到來。';
+      nextAction = '可以先確認繳費日與到期日。';
+    } else {
+      statusIcon = Icons.check_circle_rounded;
+      statusColor = const Color(0xFF167D63);
+      statusTitle = '目前沒有急件';
+      statusDetail = '今天沒有迫切要處理的提醒。';
+      nextAction = '可先依照缺口試算，補強保障不足的項目。';
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(statusIcon, size: 24, color: statusColor),
+                const SizedBox(width: 8),
+                Text(
+                  statusTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: statusColor),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(statusDetail),
+            const SizedBox(height: 6),
+            Text(
+              nextAction,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text('保障完成度：$coverageCompletionPercent%'),
+            Text('風險評分：$_riskScore / 15'),
+          ],
+        ),
+      ),
     );
   }
 
@@ -793,6 +1058,8 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
     final coverageCompletionPercent = (_coverageCompletionRate * 100).round();
 
     return _buildPageScaffold([
+      _buildTodayFocusCard(context),
+      const SizedBox(height: 12),
       Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -801,18 +1068,18 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
             children: [
               Text('保障總覽', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
-              Text('風險評分：$_riskScore / 15'),
+              Text('風險評分：$_riskScore / 15（越高代表越需要補強）'),
               Text('家庭年收入：$_annualIncome 萬'),
               Text('緊急預備金：$_financialBufferMonths 個月'),
               Text('建議壽險保額：約 $_recommendedLifeCoverage 萬'),
               Text('建議醫療險保額：約 $_recommendedMedicalCoverage 萬'),
-              Text('每月可規劃保費：$_monthlyBudget 元'),
+              Text('每月可規劃保費：$_monthlyBudget 元（可負擔金額）'),
               const SizedBox(height: 8),
               Text('已建檔保單：${_policies.length} 張'),
               Text('已建檔總保額：$_totalCoverage 萬'),
               Text('已建檔月繳保費：$_totalMonthlyPremium 元'),
               const SizedBox(height: 8),
-              Text('整體保障完成度：$coverageCompletionPercent%'),
+              Text('整體保障完成度：$coverageCompletionPercent%（越高越完整）'),
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
@@ -854,9 +1121,11 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
               Text('提醒摘要', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(
-                '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+                '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆（接近繳費日）',
               ),
-              Text('$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆'),
+              Text(
+                '$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆（接近到期日）',
+              ),
             ],
           ),
         ),
@@ -865,6 +1134,12 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
   }
 
   Widget _buildAssessment(BuildContext context) {
+    final displayAge = _draftAge ?? _age;
+    final displayMonthlyBudget = _draftMonthlyBudget ?? _monthlyBudget;
+    final displayAnnualIncome = _draftAnnualIncome ?? _annualIncome;
+    final displayFinancialBufferMonths =
+        _draftFinancialBufferMonths ?? _financialBufferMonths;
+
     return _buildPageScaffold([
       Card(
         child: Padding(
@@ -872,53 +1147,92 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('年齡：$_age 歲'),
+              Text('年齡：$displayAge 歲'),
               Slider(
                 min: 20,
                 max: 65,
                 divisions: 45,
-                value: _age.toDouble(),
+                value: displayAge.toDouble(),
                 onChanged: (value) {
-                  _updateProfile((state) => state.copyWith(age: value.round()));
+                  setState(() {
+                    _draftAge = value.round();
+                  });
+                },
+                onChangeEnd: (value) {
+                  final nextValue = value.round();
+                  setState(() {
+                    _draftAge = null;
+                  });
+                  if (nextValue == _age) return;
+                  _updateProfile((state) => state.copyWith(age: nextValue));
                 },
               ),
               const SizedBox(height: 8),
-              Text('每月保費預算：$_monthlyBudget 元'),
+              Text('每月保費預算：$displayMonthlyBudget 元（每月可接受）'),
               Slider(
                 min: 1000,
                 max: 10000,
                 divisions: 18,
-                value: _monthlyBudget.toDouble(),
+                value: displayMonthlyBudget.toDouble(),
                 onChanged: (value) {
+                  setState(() {
+                    _draftMonthlyBudget = value.round();
+                  });
+                },
+                onChangeEnd: (value) {
+                  final nextValue = value.round();
+                  setState(() {
+                    _draftMonthlyBudget = null;
+                  });
+                  if (nextValue == _monthlyBudget) return;
                   _updateProfile(
-                    (state) => state.copyWith(monthlyBudget: value.round()),
+                    (state) => state.copyWith(monthlyBudget: nextValue),
                   );
                 },
               ),
               const SizedBox(height: 8),
-              Text('家庭年收入：$_annualIncome 萬'),
+              Text('家庭年收入：$displayAnnualIncome 萬（每年）'),
               Slider(
                 min: 30,
                 max: 300,
                 divisions: 27,
-                value: _annualIncome.toDouble(),
+                value: displayAnnualIncome.toDouble(),
                 onChanged: (value) {
+                  setState(() {
+                    _draftAnnualIncome = value.round();
+                  });
+                },
+                onChangeEnd: (value) {
+                  final nextValue = value.round();
+                  setState(() {
+                    _draftAnnualIncome = null;
+                  });
+                  if (nextValue == _annualIncome) return;
                   _updateProfile(
-                    (state) => state.copyWith(annualIncome: value.round()),
+                    (state) => state.copyWith(annualIncome: nextValue),
                   );
                 },
               ),
               const SizedBox(height: 8),
-              Text('緊急預備金：$_financialBufferMonths 個月'),
+              Text('緊急預備金：$displayFinancialBufferMonths 個月（可支撐生活）'),
               Slider(
                 min: 0,
                 max: 12,
                 divisions: 12,
-                value: _financialBufferMonths.toDouble(),
+                value: displayFinancialBufferMonths.toDouble(),
                 onChanged: (value) {
+                  setState(() {
+                    _draftFinancialBufferMonths = value.round();
+                  });
+                },
+                onChangeEnd: (value) {
+                  final nextValue = value.round();
+                  setState(() {
+                    _draftFinancialBufferMonths = null;
+                  });
+                  if (nextValue == _financialBufferMonths) return;
                   _updateProfile(
-                    (state) =>
-                        state.copyWith(financialBufferMonths: value.round()),
+                    (state) => state.copyWith(financialBufferMonths: nextValue),
                   );
                 },
               ),
@@ -945,7 +1259,7 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('是否有房貸'),
+                title: const Text('目前有房貸'),
                 value: _hasMortgage,
                 onChanged: (value) {
                   _updateProfile((state) => state.copyWith(hasMortgage: value));
@@ -953,7 +1267,7 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('是否已有主要保險'),
+                title: const Text('目前已有主要保險'),
                 value: _hasExistingCoverage,
                 onChanged: (value) {
                   _updateProfile(
@@ -1359,6 +1673,10 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
 
   Widget _buildPolicies(BuildContext context) {
     final displayedPolicies = _displayPolicies;
+    final displayPaymentReminderWindowDays =
+        _draftPaymentReminderWindowDays ?? _paymentReminderWindowDays;
+    final displayExpiryReminderWindowDays =
+        _draftExpiryReminderWindowDays ?? _expiryReminderWindowDays;
     final policyReminders = _policyReminders;
     final paymentReminderCount = policyReminders
         .where((item) => item.type == PolicyReminderType.payment)
@@ -1390,9 +1708,11 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
               Text('篩選後月繳保費：$filteredMonthlyPremium 元'),
               const SizedBox(height: 8),
               Text(
-                '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+                '$displayPaymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
               ),
-              Text('$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆'),
+              Text(
+                '$displayExpiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆',
+              ),
             ],
           ),
         ),
@@ -1404,10 +1724,13 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('提醒設定', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '提醒設定（打開開關即可）',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('啟用繳費提醒'),
+                title: const Text('繳費前提醒'),
                 value: _enablePaymentReminders,
                 onChanged: (value) {
                   _updateProfile(
@@ -1416,24 +1739,33 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
                 },
               ),
               if (_enablePaymentReminders) ...[
-                Text('提前 $_paymentReminderWindowDays 天提醒'),
+                Text('提前 $displayPaymentReminderWindowDays 天提醒'),
                 Slider(
                   min: 1,
                   max: 30,
                   divisions: 29,
-                  value: _paymentReminderWindowDays.toDouble(),
+                  value: displayPaymentReminderWindowDays.toDouble(),
                   onChanged: (value) {
+                    setState(() {
+                      _draftPaymentReminderWindowDays = value.round();
+                    });
+                  },
+                  onChangeEnd: (value) {
+                    final nextValue = value.round();
+                    setState(() {
+                      _draftPaymentReminderWindowDays = null;
+                    });
+                    if (nextValue == _paymentReminderWindowDays) return;
                     _updateProfile(
-                      (state) => state.copyWith(
-                        paymentReminderWindowDays: value.round(),
-                      ),
+                      (state) =>
+                          state.copyWith(paymentReminderWindowDays: nextValue),
                     );
                   },
                 ),
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('啟用到期提醒'),
+                title: const Text('到期前提醒'),
                 value: _enableExpiryReminders,
                 onChanged: (value) {
                   _updateProfile(
@@ -1442,36 +1774,37 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
                 },
               ),
               if (_enableExpiryReminders) ...[
-                Text('提前 $_expiryReminderWindowDays 天提醒'),
+                Text('提前 $displayExpiryReminderWindowDays 天提醒'),
                 Slider(
                   min: 7,
                   max: 180,
                   divisions: 173,
-                  value: _expiryReminderWindowDays.toDouble(),
+                  value: displayExpiryReminderWindowDays.toDouble(),
                   onChanged: (value) {
+                    setState(() {
+                      _draftExpiryReminderWindowDays = value.round();
+                    });
+                  },
+                  onChangeEnd: (value) {
+                    final nextValue = value.round();
+                    setState(() {
+                      _draftExpiryReminderWindowDays = null;
+                    });
+                    if (nextValue == _expiryReminderWindowDays) return;
                     _updateProfile(
-                      (state) => state.copyWith(
-                        expiryReminderWindowDays: value.round(),
-                      ),
+                      (state) =>
+                          state.copyWith(expiryReminderWindowDays: nextValue),
                     );
                   },
                 ),
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('啟用系統通知'),
-                subtitle: const Text('每天 09:00 自動推播（僅有提醒時）'),
+                title: const Text('手機系統通知'),
+                subtitle: const Text('每天 09:00 自動提醒（有提醒事項才推播）'),
                 value: _enableSystemNotifications,
-                onChanged: (value) {
-                  if (value) {
-                    _initializeSystemNotifications(requestPermission: true);
-                  }
-                  _updateProfile(
-                    (state) => state.copyWith(
-                      enableSystemNotifications: value,
-                      clearLastSystemNotificationDate: value,
-                    ),
-                  );
+                onChanged: (value) async {
+                  await _handleSystemNotificationToggle(value);
                 },
               ),
               if (_enableSystemNotifications) ...[
@@ -1483,7 +1816,7 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
                 ),
                 Text(
                   _lastSystemNotificationDate == null
-                      ? '尚未完成每日 09:00 排程同步'
+                      ? '尚未完成每天 09:00 的提醒排程'
                       : '最近排程同步：$_lastSystemNotificationDate',
                 ),
               ],
@@ -1498,7 +1831,10 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('篩選與排序', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '篩選與排序（方便查找）',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 12),
               Row(
                 children: [
