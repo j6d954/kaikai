@@ -252,11 +252,111 @@ class InsuranceAdvisorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF0E5AA7),
+      brightness: Brightness.light,
+    );
+    final colorScheme = baseScheme.copyWith(
+      primary: const Color(0xFF0E5AA7),
+      secondary: const Color(0xFF1D9D8E),
+      tertiary: const Color(0xFFDD8B2A),
+      surface: const Color(0xFFFFFFFF),
+      surfaceContainerHighest: const Color(0xFFDCE8F5),
+      outlineVariant: const Color(0xFFC5D6EA),
+    );
+
     return MaterialApp(
       title: '個人保險顧問',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
         useMaterial3: true,
+        colorScheme: colorScheme,
+        scaffoldBackgroundColor: const Color(0xFFEAF1FA),
+        fontFamily: 'Noto Sans TC',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        cardTheme: CardThemeData(
+          color: const Color(0xF8FFFFFF),
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0x80C9DBEF)),
+          ),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: const Color(0xF5FFFFFF),
+          indicatorColor: const Color(0xFFCEE5FF),
+          elevation: 0,
+          height: 68,
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected
+                  ? const Color(0xFF0C3F79)
+                  : const Color(0xFF516274),
+            );
+          }),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF0E5AA7),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: StadiumBorder(),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF3F7FD),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFC3D5EA)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFC3D5EA)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFF0E5AA7), width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+        ),
+        textTheme: ThemeData.light(useMaterial3: true).textTheme.copyWith(
+          headlineSmall: const TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.6,
+            color: Color(0xFF10253D),
+          ),
+          titleLarge: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF10253D),
+          ),
+          titleMedium: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF183C61),
+          ),
+          bodyMedium: const TextStyle(
+            fontSize: 14,
+            height: 1.35,
+            color: Color(0xFF2A4057),
+          ),
+          bodySmall: const TextStyle(
+            fontSize: 12,
+            height: 1.35,
+            color: Color(0xFF58708C),
+          ),
+        ),
       ),
       home: const InsuranceHomePage(),
     );
@@ -858,6 +958,196 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     return items;
   }
 
+  String get _currentPageTitle {
+    switch (_selectedTab) {
+      case 0:
+        return '保障全景';
+      case 1:
+        return '需求問卷';
+      case 2:
+        return '顧問建議';
+      case 3:
+        return '方案比較';
+      case 4:
+        return '保單管理';
+      default:
+        return '個人保險顧問';
+    }
+  }
+
+  String get _currentPageSubtitle {
+    switch (_selectedTab) {
+      case 0:
+        return '快速掌握保障覆蓋率、缺口與提醒狀態。';
+      case 1:
+        return '根據年齡、收入與家庭結構，調整建議保額。';
+      case 2:
+        return '依預算和風險排序，給出可落地的規劃順序。';
+      case 3:
+        return '用同一組資料比較不同方案的保費與保障。';
+      case 4:
+        return '集中管理保單、提醒設定與續保節點。';
+      default:
+        return '';
+    }
+  }
+
+  IconData get _currentPageIcon {
+    switch (_selectedTab) {
+      case 0:
+        return Icons.insights_rounded;
+      case 1:
+        return Icons.fact_check_rounded;
+      case 2:
+        return Icons.tips_and_updates_rounded;
+      case 3:
+        return Icons.compare_arrows_rounded;
+      case 4:
+        return Icons.description_rounded;
+      default:
+        return Icons.shield_outlined;
+    }
+  }
+
+  Widget _buildPageScaffold(List<Widget> children) {
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFF5F9FF),
+                  Color(0xFFE8F2FF),
+                  Color(0xFFE5F6F3),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: -120,
+          right: -80,
+          child: IgnorePointer(
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0x3359A8FF),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -130,
+          left: -80,
+          child: IgnorePointer(
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0x3322B89A),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontalPadding = constraints.maxWidth >= 980
+                  ? 26.0
+                  : 16.0;
+              return Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      8,
+                      horizontalPadding,
+                      24,
+                    ),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(26),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF0D4B87), Color(0xFF1F8B9D)],
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x2A0F4A85),
+                              blurRadius: 16,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0x33FFFFFF),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(
+                                _currentPageIcon,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _currentPageTitle,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _currentPageSubtitle,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: const Color(0xDDE9F4FF),
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...children,
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -869,7 +1159,30 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('個人保險顧問')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        titleSpacing: 16,
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11),
+                color: const Color(0x220E5AA7),
+              ),
+              child: const Icon(Icons.shield_rounded, color: Color(0xFF0E5AA7)),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '個人保險顧問',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+      ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: KeyedSubtree(
@@ -884,20 +1197,30 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
               label: const Text('新增保單'),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedTab,
-        onDestinationSelected: (index) {
-          _updateProfile(() {
-            _selectedTab = index;
-          });
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard), label: '總覽'),
-          NavigationDestination(icon: Icon(Icons.fact_check), label: '評估'),
-          NavigationDestination(icon: Icon(Icons.lightbulb), label: '建議'),
-          NavigationDestination(icon: Icon(Icons.compare_arrows), label: '比較'),
-          NavigationDestination(icon: Icon(Icons.description), label: '保單'),
-        ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(26),
+          child: NavigationBar(
+            selectedIndex: _selectedTab,
+            onDestinationSelected: (index) {
+              _updateProfile(() {
+                _selectedTab = index;
+              });
+            },
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.dashboard), label: '總覽'),
+              NavigationDestination(icon: Icon(Icons.fact_check), label: '評估'),
+              NavigationDestination(icon: Icon(Icons.lightbulb), label: '建議'),
+              NavigationDestination(
+                icon: Icon(Icons.compare_arrows),
+                label: '比較',
+              ),
+              NavigationDestination(icon: Icon(Icons.description), label: '保單'),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -912,218 +1235,206 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
         .length;
     final coverageCompletionPercent = (_coverageCompletionRate * 100).round();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('保障總覽', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                Text('風險評分：$_riskScore / 15'),
-                Text('家庭年收入：$_annualIncome 萬'),
-                Text('緊急預備金：$_financialBufferMonths 個月'),
-                Text('建議壽險保額：約 $_recommendedLifeCoverage 萬'),
-                Text('建議醫療險保額：約 $_recommendedMedicalCoverage 萬'),
-                Text('每月可規劃保費：$_monthlyBudget 元'),
-                const SizedBox(height: 8),
-                Text('已建檔保單：${_policies.length} 張'),
-                Text('已建檔總保額：$_totalCoverage 萬'),
-                Text('已建檔月繳保費：$_totalMonthlyPremium 元'),
-                const SizedBox(height: 8),
-                Text('整體保障完成度：$coverageCompletionPercent%'),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: _coverageCompletionRate,
-                    minHeight: 8,
-                  ),
+    return _buildPageScaffold([
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('保障總覽', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Text('風險評分：$_riskScore / 15'),
+              Text('家庭年收入：$_annualIncome 萬'),
+              Text('緊急預備金：$_financialBufferMonths 個月'),
+              Text('建議壽險保額：約 $_recommendedLifeCoverage 萬'),
+              Text('建議醫療險保額：約 $_recommendedMedicalCoverage 萬'),
+              Text('每月可規劃保費：$_monthlyBudget 元'),
+              const SizedBox(height: 8),
+              Text('已建檔保單：${_policies.length} 張'),
+              Text('已建檔總保額：$_totalCoverage 萬'),
+              Text('已建檔月繳保費：$_totalMonthlyPremium 元'),
+              const SizedBox(height: 8),
+              Text('整體保障完成度：$coverageCompletionPercent%'),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: _coverageCompletionRate,
+                  minHeight: 8,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('保單缺口', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
-                ..._coverageGapItems.map((item) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _CoverageGapProgressRow(item: item),
-                  );
-                }),
-              ],
-            ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('保單缺口', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 10),
+              ..._coverageGapItems.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _CoverageGapProgressRow(item: item),
+                );
+              }),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('提醒摘要', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text(
-                  '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
-                ),
-                Text(
-                  '$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆',
-                ),
-              ],
-            ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('提醒摘要', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(
+                '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+              ),
+              Text('$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆'),
+            ],
           ),
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   Widget _buildAssessment(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('需求評估', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('年齡：$_age 歲'),
-                Slider(
-                  min: 20,
-                  max: 65,
-                  divisions: 45,
-                  value: _age.toDouble(),
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _age = value.round();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                Text('每月保費預算：$_monthlyBudget 元'),
-                Slider(
-                  min: 1000,
-                  max: 10000,
-                  divisions: 18,
-                  value: _monthlyBudget.toDouble(),
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _monthlyBudget = value.round();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                Text('家庭年收入：$_annualIncome 萬'),
-                Slider(
-                  min: 30,
-                  max: 300,
-                  divisions: 27,
-                  value: _annualIncome.toDouble(),
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _annualIncome = value.round();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                Text('緊急預備金：$_financialBufferMonths 個月'),
-                Slider(
-                  min: 0,
-                  max: 12,
-                  divisions: 12,
-                  value: _financialBufferMonths.toDouble(),
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _financialBufferMonths = value.round();
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Text('扶養人數'),
-                    const Spacer(),
-                    DropdownButton<int>(
-                      value: _dependents,
-                      items: List.generate(
-                        6,
-                        (i) => DropdownMenuItem<int>(
-                          value: i,
-                          child: Text('$i 人'),
-                        ),
-                      ),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        _updateProfile(() {
-                          _dependents = value;
-                        });
-                      },
+    return _buildPageScaffold([
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('年齡：$_age 歲'),
+              Slider(
+                min: 20,
+                max: 65,
+                divisions: 45,
+                value: _age.toDouble(),
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _age = value.round();
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Text('每月保費預算：$_monthlyBudget 元'),
+              Slider(
+                min: 1000,
+                max: 10000,
+                divisions: 18,
+                value: _monthlyBudget.toDouble(),
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _monthlyBudget = value.round();
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Text('家庭年收入：$_annualIncome 萬'),
+              Slider(
+                min: 30,
+                max: 300,
+                divisions: 27,
+                value: _annualIncome.toDouble(),
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _annualIncome = value.round();
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Text('緊急預備金：$_financialBufferMonths 個月'),
+              Slider(
+                min: 0,
+                max: 12,
+                divisions: 12,
+                value: _financialBufferMonths.toDouble(),
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _financialBufferMonths = value.round();
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('扶養人數'),
+                  const Spacer(),
+                  DropdownButton<int>(
+                    value: _dependents,
+                    items: List.generate(
+                      6,
+                      (i) =>
+                          DropdownMenuItem<int>(value: i, child: Text('$i 人')),
                     ),
-                  ],
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('是否有房貸'),
-                  value: _hasMortgage,
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _hasMortgage = value;
-                    });
-                  },
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('是否已有主要保險'),
-                  value: _hasExistingCoverage,
-                  onChanged: (value) {
-                    _updateProfile(() {
-                      _hasExistingCoverage = value;
-                    });
-                  },
-                ),
-              ],
-            ),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      _updateProfile(() {
+                        _dependents = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('是否有房貸'),
+                value: _hasMortgage,
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _hasMortgage = value;
+                  });
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('是否已有主要保險'),
+                value: _hasExistingCoverage,
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _hasExistingCoverage = value;
+                  });
+                },
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('缺口試算結果', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Text('建議總保障：$_totalRecommendedCoverage 萬'),
-                Text('目前總保障：$_totalCoverage 萬'),
-                Text('待補保障缺口：$_totalCoverageGap 萬'),
-                const SizedBox(height: 8),
-                ..._coverageGapItems.map((item) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _CoverageGapProgressRow(item: item),
-                  );
-                }),
-              ],
-            ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('缺口試算結果', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text('建議總保障：$_totalRecommendedCoverage 萬'),
+              Text('目前總保障：$_totalCoverage 萬'),
+              Text('待補保障缺口：$_totalCoverageGap 萬'),
+              const SizedBox(height: 8),
+              ..._coverageGapItems.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _CoverageGapProgressRow(item: item),
+                );
+              }),
+            ],
           ),
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   Widget _buildRecommendation(BuildContext context) {
@@ -1133,75 +1444,186 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     final isWithinBudget = budgetGap <= 0;
     final priorityGaps = _priorityGapItems;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('客製建議', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
+    return _buildPageScaffold([
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '推薦方案：${recommendedPlan.name}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text('定期壽險 ${recommendedPlan.lifeCoverage} 萬'),
+              Text('醫療實支實付 ${recommendedPlan.medicalCoverage} 萬'),
+              Text('重大疾病一次金 ${recommendedPlan.criticalCoverage} 萬'),
+              Text('失能扶助 ${recommendedPlan.disabilityCoverage} 萬'),
+              const SizedBox(height: 8),
+              Text('估算月繳：${recommendedPlan.estimatedPremium} 元'),
+              Text(
+                isWithinBudget
+                    ? '較預算結餘 ${budgetGap.abs()} 元'
+                    : '較預算超出 $budgetGap 元',
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (priorityGaps.isNotEmpty)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '推薦方案：${recommendedPlan.name}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Text('優先補強順序', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                ...priorityGaps.map(
+                  (gap) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text('• ${gap.type}：尚缺 ${gap.gap} 萬'),
+                  ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      if (priorityGaps.isNotEmpty) const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('顧問提醒', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ..._suggestions.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('• $item'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildComparison(BuildContext context) {
+    final plans = _comparisonPlans;
+    final recommendedIndex = _recommendedPlanIndex;
+
+    return _buildPageScaffold([
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 920;
+          final body = isWide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: _buildComparisonOverviewPanel(
+                        context,
+                        plans: plans,
+                        recommendedIndex: recommendedIndex,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 6,
+                      child: _buildComparisonPlansPanel(
+                        context,
+                        plans: plans,
+                        recommendedIndex: recommendedIndex,
+                        isWide: true,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildComparisonOverviewPanel(
+                      context,
+                      plans: plans,
+                      recommendedIndex: recommendedIndex,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildComparisonPlansPanel(
+                      context,
+                      plans: plans,
+                      recommendedIndex: recommendedIndex,
+                      isWide: false,
+                    ),
+                  ],
+                );
+          return body;
+        },
+      ),
+    ]);
+  }
+
+  Widget _buildComparisonOverviewPanel(
+    BuildContext context, {
+    required List<PlanComparisonOption> plans,
+    required int recommendedIndex,
+  }) {
+    final recommended = plans[recommendedIndex];
+    final budgetGap = recommended.estimatedPremium - _monthlyBudget;
+    final inBudgetCount = plans
+        .where((plan) => plan.estimatedPremium <= _monthlyBudget)
+        .length;
+    final minPremium = plans.map((plan) => plan.estimatedPremium).reduce(min);
+    final maxCoverage = plans.map((plan) => plan.totalCoverage).reduce(max);
+
+    return Column(
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('方案策略摘要', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                Text('定期壽險 ${recommendedPlan.lifeCoverage} 萬'),
-                Text('醫療實支實付 ${recommendedPlan.medicalCoverage} 萬'),
-                Text('重大疾病一次金 ${recommendedPlan.criticalCoverage} 萬'),
-                Text('失能扶助 ${recommendedPlan.disabilityCoverage} 萬'),
+                Text('推薦：${recommended.name}'),
+                Text('月預算：$_monthlyBudget 元'),
+                Text('最低方案保費：$minPremium 元'),
+                Text('最高保障總額：$maxCoverage 萬'),
+                Text('可落在預算內方案：$inBudgetCount / ${plans.length}'),
                 const SizedBox(height: 8),
-                Text('估算月繳：${recommendedPlan.estimatedPremium} 元'),
                 Text(
-                  isWithinBudget
-                      ? '較預算結餘 ${budgetGap.abs()} 元'
-                      : '較預算超出 $budgetGap 元',
+                  budgetGap <= 0
+                      ? '推薦方案預算內，餘額 ${budgetGap.abs()} 元'
+                      : '推薦方案超出預算 $budgetGap 元',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: budgetGap <= 0
+                        ? const Color(0xFF117A70)
+                        : const Color(0xFFC04A2E),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
-        if (priorityGaps.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '優先補強順序',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  ...priorityGaps.map(
-                    (gap) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text('• ${gap.type}：尚缺 ${gap.gap} 萬'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        if (priorityGaps.isNotEmpty) const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('顧問提醒', style: Theme.of(context).textTheme.titleMedium),
+                Text('使用建議', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                ..._suggestions.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text('• $item'),
-                  ),
-                ),
+                const Text('1. 先看預算差額，確認客戶可承受範圍。'),
+                const Text('2. 再看缺口類型，決定先補壽險或醫療。'),
+                const Text('3. 用推薦方案當基準，再微調保費。'),
               ],
             ),
           ),
@@ -1210,15 +1632,24 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     );
   }
 
-  Widget _buildComparison(BuildContext context) {
-    final plans = _comparisonPlans;
-    final recommendedIndex = _recommendedPlanIndex;
+  Widget _buildComparisonPlansPanel(
+    BuildContext context, {
+    required List<PlanComparisonOption> plans,
+    required int recommendedIndex,
+    required bool isWide,
+  }) {
+    final planCards = List.generate(plans.length, (index) {
+      final plan = plans[index];
+      return _buildPlanDetailCard(
+        context,
+        plan: plan,
+        isRecommended: index == recommendedIndex,
+      );
+    });
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('方案比較', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1234,6 +1665,8 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
+              columnSpacing: 18,
+              headingRowColor: WidgetStateProperty.all(const Color(0x1A0E5AA7)),
               columns: const [
                 DataColumn(label: Text('方案')),
                 DataColumn(label: Text('壽險(萬)')),
@@ -1281,46 +1714,92 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
           ),
         ),
         const SizedBox(height: 12),
-        ...List.generate(plans.length, (index) {
-          final plan = plans[index];
-          final budgetDelta = plan.estimatedPremium - _monthlyBudget;
-          final withinBudget = budgetDelta <= 0;
-          final isRecommended = index == recommendedIndex;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            plan.name,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        if (isRecommended) const Chip(label: Text('推薦')),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(plan.description),
-                    const SizedBox(height: 8),
-                    Text('估算月繳：${plan.estimatedPremium} 元'),
-                    Text(
-                      withinBudget
-                          ? '預算內，尚有 ${budgetDelta.abs()} 元彈性'
-                          : '超出預算 $budgetDelta 元',
-                    ),
-                  ],
+        if (isWide)
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: planCards
+                .map((card) => SizedBox(width: 280, child: card))
+                .toList(),
+          )
+        else
+          ...planCards.map(
+            (card) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: card,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPlanDetailCard(
+    BuildContext context, {
+    required PlanComparisonOption plan,
+    required bool isRecommended,
+  }) {
+    final budgetDelta = plan.estimatedPremium - _monthlyBudget;
+    final withinBudget = budgetDelta <= 0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    plan.name,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
+                if (isRecommended) const Chip(label: Text('推薦')),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(plan.description),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildPlanMetricChip('壽險', '${plan.lifeCoverage}萬'),
+                _buildPlanMetricChip('醫療', '${plan.medicalCoverage}萬'),
+                _buildPlanMetricChip('重疾', '${plan.criticalCoverage}萬'),
+                _buildPlanMetricChip('失能', '${plan.disabilityCoverage}萬'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('估算月繳：${plan.estimatedPremium} 元'),
+            Text(
+              withinBudget
+                  ? '預算內，尚有 ${budgetDelta.abs()} 元彈性'
+                  : '超出預算 $budgetDelta 元',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: withinBudget
+                    ? const Color(0xFF117A70)
+                    : const Color(0xFFC04A2E),
+                fontWeight: FontWeight.w700,
               ),
             ),
-          );
-        }),
-      ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlanMetricChip(String label, String value) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: const Color(0x1E0E5AA7),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text('$label $value'),
+      ),
     );
   }
 
@@ -1342,297 +1821,284 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
       (sum, policy) => sum + policy.monthlyPremium,
     );
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('保單管理', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('總保單數：${_policies.length} 張'),
-                Text('總保額：$_totalCoverage 萬'),
-                Text('總月繳保費：$_totalMonthlyPremium 元'),
-                const SizedBox(height: 8),
-                Text('篩選後保額：$filteredCoverage 萬'),
-                Text('篩選後月繳保費：$filteredMonthlyPremium 元'),
-                const SizedBox(height: 8),
-                Text(
-                  '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
-                ),
-                Text(
-                  '$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆',
-                ),
-              ],
-            ),
+    return _buildPageScaffold([
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('總保單數：${_policies.length} 張'),
+              Text('總保額：$_totalCoverage 萬'),
+              Text('總月繳保費：$_totalMonthlyPremium 元'),
+              const SizedBox(height: 8),
+              Text('篩選後保額：$filteredCoverage 萬'),
+              Text('篩選後月繳保費：$filteredMonthlyPremium 元'),
+              const SizedBox(height: 8),
+              Text(
+                '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+              ),
+              Text('$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆'),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('提醒設定', style: Theme.of(context).textTheme.titleMedium),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('啟用繳費提醒'),
-                  value: _enablePaymentReminders,
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('提醒設定', style: Theme.of(context).textTheme.titleMedium),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('啟用繳費提醒'),
+                value: _enablePaymentReminders,
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _enablePaymentReminders = value;
+                  });
+                },
+              ),
+              if (_enablePaymentReminders) ...[
+                Text('提前 $_paymentReminderWindowDays 天提醒'),
+                Slider(
+                  min: 1,
+                  max: 30,
+                  divisions: 29,
+                  value: _paymentReminderWindowDays.toDouble(),
                   onChanged: (value) {
                     _updateProfile(() {
-                      _enablePaymentReminders = value;
+                      _paymentReminderWindowDays = value.round();
                     });
                   },
                 ),
-                if (_enablePaymentReminders) ...[
-                  Text('提前 $_paymentReminderWindowDays 天提醒'),
-                  Slider(
-                    min: 1,
-                    max: 30,
-                    divisions: 29,
-                    value: _paymentReminderWindowDays.toDouble(),
-                    onChanged: (value) {
-                      _updateProfile(() {
-                        _paymentReminderWindowDays = value.round();
-                      });
-                    },
-                  ),
-                ],
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('啟用到期提醒'),
-                  value: _enableExpiryReminders,
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('啟用到期提醒'),
+                value: _enableExpiryReminders,
+                onChanged: (value) {
+                  _updateProfile(() {
+                    _enableExpiryReminders = value;
+                  });
+                },
+              ),
+              if (_enableExpiryReminders) ...[
+                Text('提前 $_expiryReminderWindowDays 天提醒'),
+                Slider(
+                  min: 7,
+                  max: 180,
+                  divisions: 173,
+                  value: _expiryReminderWindowDays.toDouble(),
                   onChanged: (value) {
                     _updateProfile(() {
-                      _enableExpiryReminders = value;
+                      _expiryReminderWindowDays = value.round();
                     });
                   },
                 ),
-                if (_enableExpiryReminders) ...[
-                  Text('提前 $_expiryReminderWindowDays 天提醒'),
-                  Slider(
-                    min: 7,
-                    max: 180,
-                    divisions: 173,
-                    value: _expiryReminderWindowDays.toDouble(),
-                    onChanged: (value) {
-                      _updateProfile(() {
-                        _expiryReminderWindowDays = value.round();
-                      });
-                    },
-                  ),
-                ],
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('啟用系統通知'),
-                  subtitle: const Text('每天 09:00 自動推播（僅有提醒時）'),
-                  value: _enableSystemNotifications,
-                  onChanged: (value) {
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('啟用系統通知'),
+                subtitle: const Text('每天 09:00 自動推播（僅有提醒時）'),
+                value: _enableSystemNotifications,
+                onChanged: (value) {
+                  if (value) {
+                    _initializeSystemNotifications(requestPermission: true);
+                  }
+                  _updateProfile(() {
+                    _enableSystemNotifications = value;
                     if (value) {
-                      _initializeSystemNotifications(requestPermission: true);
+                      _lastSystemNotificationDate = null;
                     }
-                    _updateProfile(() {
-                      _enableSystemNotifications = value;
-                      if (value) {
-                        _lastSystemNotificationDate = null;
-                      }
-                    });
-                  },
+                  });
+                },
+              ),
+              if (_enableSystemNotifications) ...[
+                const SizedBox(height: 4),
+                OutlinedButton.icon(
+                  onPressed: _triggerTestSystemNotification,
+                  icon: const Icon(Icons.notifications_active_outlined),
+                  label: const Text('發送測試通知'),
                 ),
-                if (_enableSystemNotifications) ...[
-                  const SizedBox(height: 4),
-                  OutlinedButton.icon(
-                    onPressed: _triggerTestSystemNotification,
-                    icon: const Icon(Icons.notifications_active_outlined),
-                    label: const Text('發送測試通知'),
-                  ),
-                  Text(
-                    _lastSystemNotificationDate == null
-                        ? '尚未完成每日 09:00 排程同步'
-                        : '最近排程同步：$_lastSystemNotificationDate',
-                  ),
-                ],
+                Text(
+                  _lastSystemNotificationDate == null
+                      ? '尚未完成每日 09:00 排程同步'
+                      : '最近排程同步：$_lastSystemNotificationDate',
+                ),
               ],
-            ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('篩選與排序', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const SizedBox(width: 56, child: Text('類型')),
+                  Expanded(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: _effectivePolicyTypeFilter,
+                      items: _availablePolicyTypes
+                          .map(
+                            (type) => DropdownMenuItem<String>(
+                              value: type,
+                              child: Text(type),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _updateProfile(() {
+                          _policyTypeFilter = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const SizedBox(width: 56, child: Text('排序')),
+                  Expanded(
+                    child: DropdownButton<PolicySortOption>(
+                      isExpanded: true,
+                      value: _policySort,
+                      items: PolicySortOption.values
+                          .map(
+                            (option) => DropdownMenuItem<PolicySortOption>(
+                              value: option,
+                              child: Text(option.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _updateProfile(() {
+                          _policySort = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('目前顯示 ${displayedPolicies.length} / ${_policies.length} 張'),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (policyReminders.isNotEmpty)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('篩選與排序', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const SizedBox(width: 56, child: Text('類型')),
-                    Expanded(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: _effectivePolicyTypeFilter,
-                        items: _availablePolicyTypes
-                            .map(
-                              (type) => DropdownMenuItem<String>(
-                                value: type,
-                                child: Text(type),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          _updateProfile(() {
-                            _policyTypeFilter = value;
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+                Text('近期提醒', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const SizedBox(width: 56, child: Text('排序')),
-                    Expanded(
-                      child: DropdownButton<PolicySortOption>(
-                        isExpanded: true,
-                        value: _policySort,
-                        items: PolicySortOption.values
-                            .map(
-                              (option) => DropdownMenuItem<PolicySortOption>(
-                                value: option,
-                                child: Text(option.label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          _updateProfile(() {
-                            _policySort = value;
-                          });
-                        },
-                      ),
+                ...policyReminders.take(6).map((item) {
+                  final isUrgent = item.daysLeft <= 0;
+                  final icon = item.type == PolicyReminderType.payment
+                      ? Icons.payment
+                      : Icons.warning_amber_rounded;
+                  final color = isUrgent ? Colors.red : Colors.orange.shade700;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(icon, size: 18, color: color),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('${item.title}：${item.message}')),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '目前顯示 ${displayedPolicies.length} / ${_policies.length} 張',
-                ),
+                  );
+                }),
+                if (policyReminders.length > 6)
+                  Text('尚有 ${policyReminders.length - 6} 筆提醒未顯示'),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        if (policyReminders.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('近期提醒', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  ...policyReminders.take(6).map((item) {
-                    final isUrgent = item.daysLeft <= 0;
-                    final icon = item.type == PolicyReminderType.payment
-                        ? Icons.payment
-                        : Icons.warning_amber_rounded;
-                    final color = isUrgent
-                        ? Colors.red
-                        : Colors.orange.shade700;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Icon(icon, size: 18, color: color),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text('${item.title}：${item.message}'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  if (policyReminders.length > 6)
-                    Text('尚有 ${policyReminders.length - 6} 筆提醒未顯示'),
-                ],
-              ),
+      if (policyReminders.isNotEmpty) const SizedBox(height: 12),
+      if (_policies.isEmpty)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '目前尚未新增保單',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                const Text('可點擊右下角「新增保單」建立第一張保單。'),
+              ],
             ),
           ),
-        if (policyReminders.isNotEmpty) const SizedBox(height: 12),
-        if (_policies.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      if (_policies.isNotEmpty && displayedPolicies.isEmpty)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '目前沒有符合「$_effectivePolicyTypeFilter」的保單，請調整篩選條件。',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+        ),
+      ...displayedPolicies.map((policy) {
+        final detail =
+            '保額 ${policy.coverageAmount} 萬 ・ 月繳 ${policy.monthlyPremium} 元'
+            ' ・ 生效 ${_formatDate(policy.effectiveDate)}'
+            ' ・ 繳費日 每月 ${policy.paymentDay} 日'
+            ' ・ 到期 ${policy.expiryDate == null ? '未設定' : _formatDate(policy.expiryDate!)}';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Card(
+            child: ListTile(
+              title: Text('${policy.type}｜${policy.insurer}'),
+              subtitle: Text(
+                '$detail${policy.note.isEmpty ? '' : '\n${policy.note}'}',
+              ),
+              isThreeLine: policy.note.isNotEmpty,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '目前尚未新增保單',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  IconButton(
+                    tooltip: '編輯',
+                    onPressed: () => _editPolicy(policy.id),
+                    icon: const Icon(Icons.edit_outlined),
                   ),
-                  const SizedBox(height: 8),
-                  const Text('可點擊右下角「新增保單」建立第一張保單。'),
+                  IconButton(
+                    tooltip: '刪除',
+                    onPressed: () => _deletePolicy(policy.id),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
                 ],
               ),
             ),
           ),
-        if (_policies.isNotEmpty && displayedPolicies.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                '目前沒有符合「$_effectivePolicyTypeFilter」的保單，請調整篩選條件。',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ),
-        ...displayedPolicies.map((policy) {
-          final detail =
-              '保額 ${policy.coverageAmount} 萬 ・ 月繳 ${policy.monthlyPremium} 元'
-              ' ・ 生效 ${_formatDate(policy.effectiveDate)}'
-              ' ・ 繳費日 每月 ${policy.paymentDay} 日'
-              ' ・ 到期 ${policy.expiryDate == null ? '未設定' : _formatDate(policy.expiryDate!)}';
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Card(
-              child: ListTile(
-                title: Text('${policy.type}｜${policy.insurer}'),
-                subtitle: Text(
-                  '$detail${policy.note.isEmpty ? '' : '\n${policy.note}'}',
-                ),
-                isThreeLine: policy.note.isNotEmpty,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: '編輯',
-                      onPressed: () => _editPolicy(policy.id),
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      tooltip: '刪除',
-                      onPressed: () => _deletePolicy(policy.id),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
-      ],
-    );
+        );
+      }),
+    ]);
   }
 
   Future<void> _addPolicy() async {
@@ -2000,6 +2466,10 @@ class _CoverageGapProgressRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completionPercent = (item.completionRate * 100).round();
+    final hasGap = item.gap > 0;
+    final progressColor = hasGap
+        ? Theme.of(context).colorScheme.secondary
+        : Theme.of(context).colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2009,9 +2479,25 @@ class _CoverageGapProgressRow extends StatelessWidget {
           Row(
             children: [
               Expanded(child: Text(item.type)),
-              Text(
-                '建議 ${item.recommendedCoverage} 萬 / 目前 ${item.currentCoverage} 萬',
-                style: Theme.of(context).textTheme.bodySmall,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: hasGap
+                      ? const Color(0x1F1D9D8E)
+                      : const Color(0x220E5AA7),
+                ),
+                child: Text(
+                  '建議 ${item.recommendedCoverage} 萬 / 目前 ${item.currentCoverage} 萬',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: hasGap
+                        ? const Color(0xFF117A70)
+                        : const Color(0xFF0E5AA7),
+                  ),
+                ),
               ),
             ],
           ),
@@ -2021,11 +2507,13 @@ class _CoverageGapProgressRow extends StatelessWidget {
             child: LinearProgressIndicator(
               value: item.completionRate,
               minHeight: 6,
+              backgroundColor: const Color(0xFFE4EDF7),
+              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            item.gap > 0
+            hasGap
                 ? '仍缺口 ${item.gap} 萬（完成 $completionPercent%）'
                 : '已達建議保障（完成 $completionPercent%）',
             style: Theme.of(context).textTheme.bodySmall,
