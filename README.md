@@ -52,6 +52,8 @@ Optional env vars for upstream forwarding:
 - `INSURER_UPSTREAM_TIMEOUT_MS` (default: `12000`)
 - `INSURER_UPSTREAM_MAX_ATTEMPTS` (default: `3`)
 - `INSURER_UPSTREAM_RETRY_BASE_DELAY_MS` (default: `250`)
+- `GATEWAY_MAX_REQUEST_BODY_BYTES` (default: `131072`)
+- `GATEWAY_API_KEY` (optional: when set, request must send `x-gateway-api-key`)
 - `INSURER_API_TOKEN_DEFAULT`
 - `INSURER_API_TOKEN_CATHAY`, `INSURER_API_TOKEN_FUBON`, ...
 

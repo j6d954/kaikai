@@ -1,10 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 final Uri? _upstreamBaseUri = _readOptionalUri('INSURER_UPSTREAM_BASE_URL');
 final String _defaultApiToken =
     Platform.environment['INSURER_API_TOKEN_DEFAULT'] ?? '';
+final String _gatewayApiKey = (Platform.environment['GATEWAY_API_KEY'] ?? '')
+    .trim();
+final int _gatewayMaxRequestBodyBytes = _readBoundedEnvInt(
+  'GATEWAY_MAX_REQUEST_BODY_BYTES',
+  fallback: 131072,
+  min: 1024,
+  max: 2097152,
+);
 final int _upstreamTimeoutMs = _readBoundedEnvInt(
   'INSURER_UPSTREAM_TIMEOUT_MS',
   fallback: 12000,
@@ -48,12 +57,41 @@ typedef _ValidationError = ({
   Map<String, Object?> details,
 });
 
+class _JsonBodyReadResult {
+  const _JsonBodyReadResult.success(this.payload)
+    : statusCode = HttpStatus.ok,
+      code = null,
+      message = null,
+      details = null;
+
+  const _JsonBodyReadResult.failure({
+    required this.statusCode,
+    required this.code,
+    required this.message,
+    this.details,
+  }) : payload = null;
+
+  final Map<String, dynamic>? payload;
+  final int statusCode;
+  final String? code;
+  final String? message;
+  final Map<String, Object?>? details;
+
+  bool get isSuccess => payload != null;
+}
+
+class _PayloadTooLargeException implements Exception {
+  const _PayloadTooLargeException();
+}
+
 Future<void> main() async {
   final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8080;
   final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
   _logEvent('gateway_started', {
     'port': port,
     'upstreamConfigured': _upstreamBaseUri != null,
+    'gatewayAuthRequired': _gatewayApiKey.isNotEmpty,
+    'gatewayMaxRequestBodyBytes': _gatewayMaxRequestBodyBytes,
     'upstreamTimeoutMs': _upstreamTimeoutMs,
     'upstreamMaxAttempts': _upstreamMaxAttempts,
     'retryBaseDelayMs': _upstreamRetryBaseDelayMs,
@@ -114,6 +152,20 @@ Future<void> _handleRequest(HttpRequest request) async {
           segments[3] == 'policies' &&
           segments[4] == 'discovery') {
         route = 'discovery';
+        if (_gatewayApiKey.isNotEmpty &&
+            request.headers.value('x-gateway-api-key')?.trim() !=
+                _gatewayApiKey) {
+          await respondJson(
+            status: HttpStatus.unauthorized,
+            body: _buildErrorBody(
+              code: 'unauthorized',
+              message: 'Missing or invalid gateway API key.',
+              requestId: requestId,
+            ),
+          );
+          return;
+        }
+
         final insurerCode = segments[2].trim().toLowerCase();
         if (!_insurerHintsByCode.containsKey(insurerCode)) {
           await respondJson(
@@ -127,18 +179,20 @@ Future<void> _handleRequest(HttpRequest request) async {
           return;
         }
 
-        final payload = await _readJsonBody(request);
-        if (payload == null) {
+        final payloadReadResult = await _readJsonBody(request);
+        if (!payloadReadResult.isSuccess) {
           await respondJson(
-            status: HttpStatus.badRequest,
+            status: payloadReadResult.statusCode,
             body: _buildErrorBody(
-              code: 'invalid_json_body',
-              message: 'Invalid JSON body',
+              code: payloadReadResult.code!,
+              message: payloadReadResult.message!,
               requestId: requestId,
+              details: payloadReadResult.details,
             ),
           );
           return;
         }
+        final payload = payloadReadResult.payload!;
 
         final validationError = _validateDiscoveryPayload(payload);
         if (validationError != null) {
@@ -247,15 +301,63 @@ Future<({int statusCode, Map<String, dynamic> body})> _handleDiscovery({
   );
 }
 
-Future<Map<String, dynamic>?> _readJsonBody(HttpRequest request) async {
+Future<_JsonBodyReadResult> _readJsonBody(HttpRequest request) async {
+  if (request.contentLength > _gatewayMaxRequestBodyBytes) {
+    return _JsonBodyReadResult.failure(
+      statusCode: HttpStatus.requestEntityTooLarge,
+      code: 'payload_too_large',
+      message:
+          'Request body exceeds maximum size of $_gatewayMaxRequestBodyBytes bytes.',
+      details: {'maxBytes': _gatewayMaxRequestBodyBytes},
+    );
+  }
+
   try {
-    final rawBody = await utf8.decoder.bind(request).join();
-    if (rawBody.trim().isEmpty) return <String, dynamic>{};
+    var bytesRead = 0;
+    final bytesBuilder = BytesBuilder(copy: false);
+    await for (final chunk in request) {
+      bytesRead += chunk.length;
+      if (bytesRead > _gatewayMaxRequestBodyBytes) {
+        throw const _PayloadTooLargeException();
+      }
+      bytesBuilder.add(chunk);
+    }
+
+    final rawBody = utf8.decode(bytesBuilder.takeBytes());
+    if (rawBody.trim().isEmpty) {
+      return const _JsonBodyReadResult.success(<String, dynamic>{});
+    }
+
     final decoded = jsonDecode(rawBody);
-    if (decoded is! Map) return null;
-    return Map<String, dynamic>.from(decoded);
+    if (decoded is! Map) {
+      return _JsonBodyReadResult.failure(
+        statusCode: HttpStatus.badRequest,
+        code: 'invalid_json_body',
+        message: 'Invalid JSON body',
+      );
+    }
+
+    return _JsonBodyReadResult.success(Map<String, dynamic>.from(decoded));
+  } on _PayloadTooLargeException {
+    return _JsonBodyReadResult.failure(
+      statusCode: HttpStatus.requestEntityTooLarge,
+      code: 'payload_too_large',
+      message:
+          'Request body exceeds maximum size of $_gatewayMaxRequestBodyBytes bytes.',
+      details: {'maxBytes': _gatewayMaxRequestBodyBytes},
+    );
+  } on FormatException {
+    return _JsonBodyReadResult.failure(
+      statusCode: HttpStatus.badRequest,
+      code: 'invalid_json_body',
+      message: 'Invalid JSON body',
+    );
   } catch (_) {
-    return null;
+    return _JsonBodyReadResult.failure(
+      statusCode: HttpStatus.badRequest,
+      code: 'invalid_json_body',
+      message: 'Invalid JSON body',
+    );
   }
 }
 
@@ -728,7 +830,7 @@ void _setCorsHeaders(HttpResponse response) {
   );
   response.headers.set(
     HttpHeaders.accessControlAllowHeadersHeader,
-    'Content-Type,Authorization',
+    'Content-Type,Authorization,X-Gateway-Api-Key',
   );
 }
 

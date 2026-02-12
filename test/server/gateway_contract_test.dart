@@ -29,6 +29,78 @@ void main() {
     }
   });
 
+  test(
+    'discovery returns 401 when gateway api key is configured but missing',
+    () async {
+      final gateway = await _startGateway(
+        extraEnv: {'GATEWAY_API_KEY': 'secret-key'},
+      );
+      final client = http.Client();
+
+      try {
+        final response = await client.post(
+          gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'customerReference': 'cust-401',
+            'knownPolicies': [],
+          }),
+        );
+
+        expect(response.statusCode, HttpStatus.unauthorized);
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        expect(body['code'], 'unauthorized');
+      } finally {
+        client.close();
+        await gateway.stop();
+      }
+    },
+  );
+
+  test(
+    'discovery accepts request with matching gateway api key header',
+    () async {
+      final gateway = await _startGateway(
+        extraEnv: {'GATEWAY_API_KEY': 'secret-key'},
+      );
+      final client = http.Client();
+
+      try {
+        final response = await client.post(
+          gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-gateway-api-key': 'secret-key',
+          },
+          body: jsonEncode({
+            'customerReference': 'cust-200',
+            'knownPolicies': [
+              {
+                'id': 'p1',
+                'type': '壽險',
+                'insurer': '國泰人壽',
+                'coverageAmount': 500,
+                'monthlyPremium': 2500,
+                'paymentDay': 5,
+                'effectiveDate': '2024-01-01T00:00:00.000',
+                'expiryDate': null,
+                'note': '',
+              },
+            ],
+          }),
+        );
+
+        expect(response.statusCode, HttpStatus.ok);
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        expect(body['status'], 'found');
+        expect(body['code'], 'local_fallback_found');
+      } finally {
+        client.close();
+        await gateway.stop();
+      }
+    },
+  );
+
   test('discovery validates required payload fields', () async {
     final gateway = await _startGateway();
     final client = http.Client();
@@ -76,6 +148,49 @@ void main() {
       await gateway.stop();
     }
   });
+
+  test(
+    'discovery returns 413 when request body exceeds configured limit',
+    () async {
+      final gateway = await _startGateway(
+        extraEnv: {'GATEWAY_MAX_REQUEST_BODY_BYTES': '1024'},
+      );
+      final client = http.Client();
+
+      try {
+        final veryLongNote = 'A' * 5000;
+        final response = await client.post(
+          gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'customerReference': 'cust-too-large',
+            'knownPolicies': [
+              {
+                'id': 'p1',
+                'type': '壽險',
+                'insurer': '國泰人壽',
+                'coverageAmount': 500,
+                'monthlyPremium': 2500,
+                'paymentDay': 5,
+                'effectiveDate': '2024-01-01T00:00:00.000',
+                'expiryDate': null,
+                'note': veryLongNote,
+              },
+            ],
+          }),
+        );
+
+        expect(response.statusCode, HttpStatus.requestEntityTooLarge);
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        expect(body['code'], 'payload_too_large');
+        expect(body['details'], isA<Map<String, dynamic>>());
+        expect((body['details'] as Map<String, dynamic>)['maxBytes'], 1024);
+      } finally {
+        client.close();
+        await gateway.stop();
+      }
+    },
+  );
 
   test(
     'discovery returns local fallback result when upstream is not configured',

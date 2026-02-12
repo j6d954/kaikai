@@ -11,6 +11,7 @@ This document defines the HTTP contract for the local insurer gateway in `server
 - Request: `Content-Type: application/json` for JSON endpoints
 - Response: `Content-Type: application/json`
 - Response includes `x-request-id` header
+- Optional request auth header: `x-gateway-api-key` (required only when `GATEWAY_API_KEY` is configured)
 
 ## Supported Insurer Codes
 
@@ -74,6 +75,7 @@ Response `200`:
 - `knownPolicies`: required, must be a JSON array
 - each item in `knownPolicies` must be a JSON object
 - `targetInsurers`: optional, but if present must be an array of non-empty strings
+- Request body size is limited by `GATEWAY_MAX_REQUEST_BODY_BYTES` (default `131072`)
 
 ### Discovery Response Schema
 
@@ -129,8 +131,10 @@ Returned for validation/routing errors (`4xx`) and unexpected server errors (`50
 ## HTTP Status Codes
 
 - `200`: health/discovery success or fallback result
+- `401`: missing/invalid gateway API key (when auth is enabled)
 - `400`: invalid JSON or invalid payload
 - `404`: unsupported insurer code or unknown route
+- `413`: request body exceeds configured max bytes
 - `500`: unhandled server error
 - `502`: upstream bad gateway / invalid upstream response
 - `504`: upstream timeout after retries
@@ -139,6 +143,8 @@ Returned for validation/routing errors (`4xx`) and unexpected server errors (`50
 
 - `invalid_json_body`
 - `invalid_payload`
+- `unauthorized`
 - `unsupported_insurer`
+- `payload_too_large`
 - `not_found`
 - `internal_error`
