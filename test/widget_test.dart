@@ -13,7 +13,13 @@ void main() {
     expect(find.text('總覽'), findsOneWidget);
     expect(find.text('評估'), findsOneWidget);
     expect(find.text('建議'), findsOneWidget);
+    expect(find.text('比較'), findsOneWidget);
     expect(find.text('保單'), findsOneWidget);
+
+    await tester.tap(find.text('比較'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('方案比較'), findsOneWidget);
 
     await tester.tap(find.text('保單'));
     await tester.pumpAndSettle();

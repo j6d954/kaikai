@@ -1,7 +1,12 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
 enum PolicySortOption { premiumHighToLow, premiumLowToHigh }
 
@@ -32,6 +37,210 @@ class PolicyReminderItem {
   final String title;
   final String message;
   final int daysLeft;
+}
+
+class CoverageGapItem {
+  const CoverageGapItem({
+    required this.type,
+    required this.recommendedCoverage,
+    required this.currentCoverage,
+  });
+
+  final String type;
+  final int recommendedCoverage;
+  final int currentCoverage;
+
+  int get gap => max(recommendedCoverage - currentCoverage, 0);
+
+  double get completionRate {
+    if (recommendedCoverage <= 0) return 1.0;
+    return (currentCoverage / recommendedCoverage).clamp(0.0, 1.0).toDouble();
+  }
+}
+
+class PlanComparisonOption {
+  const PlanComparisonOption({
+    required this.name,
+    required this.description,
+    required this.lifeCoverage,
+    required this.medicalCoverage,
+    required this.criticalCoverage,
+    required this.disabilityCoverage,
+    required this.estimatedPremium,
+  });
+
+  final String name;
+  final String description;
+  final int lifeCoverage;
+  final int medicalCoverage;
+  final int criticalCoverage;
+  final int disabilityCoverage;
+  final int estimatedPremium;
+
+  int get totalCoverage =>
+      lifeCoverage + medicalCoverage + criticalCoverage + disabilityCoverage;
+}
+
+class ReminderNotificationService {
+  ReminderNotificationService._();
+
+  static final ReminderNotificationService instance =
+      ReminderNotificationService._();
+
+  static const _dailyScheduleNotificationId = 1001;
+  static const _testNotificationId = 1002;
+  static const _channelId = 'policy_reminder_channel';
+  static const _channelName = '保單提醒';
+  static const _channelDescription = '保費繳納與保單到期提醒';
+
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
+  bool _timeZoneConfigured = false;
+
+  Future<void> _configureLocalTimeZone() async {
+    if (_timeZoneConfigured) return;
+    tzdata.initializeTimeZones();
+    try {
+      final timezoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezoneName.identifier));
+    } catch (_) {
+      // Keep default timezone if platform lookup is unavailable.
+    }
+    _timeZoneConfigured = true;
+  }
+
+  NotificationDetails get _notificationDetails {
+    return const NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(),
+      macOS: DarwinNotificationDetails(),
+    );
+  }
+
+  Future<bool> initialize() async {
+    if (_initialized) return true;
+    await _configureLocalTimeZone();
+
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    const settings = InitializationSettings(
+      android: androidSettings,
+      iOS: darwinSettings,
+      macOS: darwinSettings,
+    );
+
+    try {
+      await _plugin.initialize(settings: settings);
+      _initialized = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> requestPermissions() async {
+    if (!await initialize()) return false;
+
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.requestNotificationsPermission();
+
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      await ios?.requestPermissions(alert: true, badge: true, sound: true);
+
+      final macos = _plugin
+          .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin
+          >();
+      await macos?.requestPermissions(alert: true, badge: true, sound: true);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  tz.TZDateTime _nextNineAM() {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, 9);
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
+  }
+
+  Future<bool> scheduleDailyReminderAtNineAM({
+    required int total,
+    required int paymentCount,
+    required int expiryCount,
+    required String sample,
+  }) async {
+    if (!await initialize()) return false;
+    if (total <= 0) return false;
+
+    final body =
+        '$sample${total > 1 ? '，另有 ${total - 1} 筆提醒' : ''}'
+        '（繳費 $paymentCount / 到期 $expiryCount）';
+
+    try {
+      await _plugin.zonedSchedule(
+        id: _dailyScheduleNotificationId,
+        scheduledDate: _nextNineAM(),
+        title: '每日保單提醒（09:00）',
+        body: body,
+        notificationDetails: _notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelDailyReminderSchedule() async {
+    if (!await initialize()) return;
+    try {
+      await _plugin.cancel(id: _dailyScheduleNotificationId);
+    } catch (_) {
+      // No-op when scheduling isn't available.
+    }
+  }
+
+  Future<bool> showTestNotification() async {
+    if (!await initialize()) return false;
+
+    try {
+      await _plugin.show(
+        id: _testNotificationId,
+        title: '保單提醒測試',
+        body: '系統通知已啟用，之後會自動推送近期繳費與到期提醒。',
+        notificationDetails: _notificationDetails,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 void main() {
@@ -65,20 +274,36 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
   static const _kSelectedTabKey = 'selectedTab';
   static const _kAgeKey = 'age';
   static const _kMonthlyBudgetKey = 'monthlyBudget';
+  static const _kAnnualIncomeKey = 'annualIncome';
+  static const _kFinancialBufferMonthsKey = 'financialBufferMonths';
   static const _kDependentsKey = 'dependents';
   static const _kHasMortgageKey = 'hasMortgage';
   static const _kHasExistingCoverageKey = 'hasExistingCoverage';
   static const _kPoliciesKey = 'policies';
   static const _kPolicyTypeFilterKey = 'policyTypeFilter';
   static const _kPolicySortKey = 'policySort';
+  static const _kEnablePaymentRemindersKey = 'enablePaymentReminders';
+  static const _kEnableExpiryRemindersKey = 'enableExpiryReminders';
+  static const _kPaymentReminderWindowDaysKey = 'paymentReminderWindowDays';
+  static const _kExpiryReminderWindowDaysKey = 'expiryReminderWindowDays';
+  static const _kEnableSystemNotificationsKey = 'enableSystemNotifications';
+  static const _kLastSystemNotificationDateKey = 'lastSystemNotificationDate';
   static const List<String> _policyTypes = ['壽險', '醫療險', '重大疾病險', '意外險', '失能險'];
 
   int _selectedTab = 0;
   int _age = 30;
   int _monthlyBudget = 3000;
+  int _annualIncome = 80;
+  int _financialBufferMonths = 6;
   int _dependents = 0;
   bool _hasMortgage = false;
   bool _hasExistingCoverage = false;
+  bool _enablePaymentReminders = true;
+  bool _enableExpiryReminders = true;
+  bool _enableSystemNotifications = true;
+  int _paymentReminderWindowDays = 7;
+  int _expiryReminderWindowDays = 60;
+  String? _lastSystemNotificationDate;
   List<InsurancePolicy> _policies = [];
   String _policyTypeFilter = '全部';
   PolicySortOption _policySort = PolicySortOption.premiumHighToLow;
@@ -86,7 +311,17 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
   @override
   void initState() {
     super.initState();
+    _initializeSystemNotifications();
     _loadProfile();
+  }
+
+  Future<void> _initializeSystemNotifications({
+    bool requestPermission = false,
+  }) async {
+    if (!await ReminderNotificationService.instance.initialize()) return;
+    if (!requestPermission) return;
+    await ReminderNotificationService.instance.requestPermissions();
+    await _syncSystemReminderNotification();
   }
 
   Future<void> _loadProfile() async {
@@ -94,6 +329,10 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     final encodedPolicies = prefs.getString(_kPoliciesKey);
     final savedPolicyTypeFilter = prefs.getString(_kPolicyTypeFilterKey);
     final savedPolicySort = prefs.getString(_kPolicySortKey);
+    final savedTab = prefs.getInt(_kSelectedTabKey);
+    final normalizedSelectedTab = savedTab == null
+        ? _selectedTab
+        : savedTab.clamp(0, 4).toInt();
 
     var policySort = _policySort;
     if (savedPolicySort != null && savedPolicySort.isNotEmpty) {
@@ -121,19 +360,39 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     }
     if (!mounted) return;
     setState(() {
-      _selectedTab = prefs.getInt(_kSelectedTabKey) ?? _selectedTab;
+      _selectedTab = normalizedSelectedTab;
       _age = prefs.getInt(_kAgeKey) ?? _age;
       _monthlyBudget = prefs.getInt(_kMonthlyBudgetKey) ?? _monthlyBudget;
+      _annualIncome = prefs.getInt(_kAnnualIncomeKey) ?? _annualIncome;
+      _financialBufferMonths =
+          prefs.getInt(_kFinancialBufferMonthsKey) ?? _financialBufferMonths;
       _dependents = prefs.getInt(_kDependentsKey) ?? _dependents;
       _hasMortgage = prefs.getBool(_kHasMortgageKey) ?? _hasMortgage;
       _hasExistingCoverage =
           prefs.getBool(_kHasExistingCoverageKey) ?? _hasExistingCoverage;
+      _enablePaymentReminders =
+          prefs.getBool(_kEnablePaymentRemindersKey) ?? _enablePaymentReminders;
+      _enableExpiryReminders =
+          prefs.getBool(_kEnableExpiryRemindersKey) ?? _enableExpiryReminders;
+      _enableSystemNotifications =
+          prefs.getBool(_kEnableSystemNotificationsKey) ??
+          _enableSystemNotifications;
+      _paymentReminderWindowDays =
+          prefs.getInt(_kPaymentReminderWindowDaysKey) ??
+          _paymentReminderWindowDays;
+      _expiryReminderWindowDays =
+          prefs.getInt(_kExpiryReminderWindowDaysKey) ??
+          _expiryReminderWindowDays;
+      _lastSystemNotificationDate = prefs.getString(
+        _kLastSystemNotificationDateKey,
+      );
       _policies = policies;
       _policyTypeFilter = savedPolicyTypeFilter?.isNotEmpty == true
           ? savedPolicyTypeFilter!
           : _policyTypeFilter;
       _policySort = policySort;
     });
+    _syncSystemReminderNotification();
   }
 
   Future<void> _saveProfile() async {
@@ -141,20 +400,99 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     await prefs.setInt(_kSelectedTabKey, _selectedTab);
     await prefs.setInt(_kAgeKey, _age);
     await prefs.setInt(_kMonthlyBudgetKey, _monthlyBudget);
+    await prefs.setInt(_kAnnualIncomeKey, _annualIncome);
+    await prefs.setInt(_kFinancialBufferMonthsKey, _financialBufferMonths);
     await prefs.setInt(_kDependentsKey, _dependents);
     await prefs.setBool(_kHasMortgageKey, _hasMortgage);
     await prefs.setBool(_kHasExistingCoverageKey, _hasExistingCoverage);
+    await prefs.setBool(_kEnablePaymentRemindersKey, _enablePaymentReminders);
+    await prefs.setBool(_kEnableExpiryRemindersKey, _enableExpiryReminders);
+    await prefs.setBool(
+      _kEnableSystemNotificationsKey,
+      _enableSystemNotifications,
+    );
+    await prefs.setInt(
+      _kPaymentReminderWindowDaysKey,
+      _paymentReminderWindowDays,
+    );
+    await prefs.setInt(
+      _kExpiryReminderWindowDaysKey,
+      _expiryReminderWindowDays,
+    );
     final encodedPolicies = jsonEncode(
       _policies.map((policy) => policy.toJson()).toList(),
     );
     await prefs.setString(_kPoliciesKey, encodedPolicies);
     await prefs.setString(_kPolicyTypeFilterKey, _policyTypeFilter);
     await prefs.setString(_kPolicySortKey, _policySort.name);
+    if (_lastSystemNotificationDate == null ||
+        _lastSystemNotificationDate!.isEmpty) {
+      await prefs.remove(_kLastSystemNotificationDateKey);
+    } else {
+      await prefs.setString(
+        _kLastSystemNotificationDateKey,
+        _lastSystemNotificationDate!,
+      );
+    }
   }
 
   void _updateProfile(VoidCallback updates) {
     setState(updates);
     _saveProfile();
+    _syncSystemReminderNotification();
+  }
+
+  Future<void> _syncSystemReminderNotification() async {
+    if (!_enableSystemNotifications) {
+      await ReminderNotificationService.instance.cancelDailyReminderSchedule();
+      return;
+    }
+
+    final reminders = _policyReminders;
+    if (reminders.isEmpty) {
+      await ReminderNotificationService.instance.cancelDailyReminderSchedule();
+      if (_lastSystemNotificationDate != null && mounted) {
+        setState(() {
+          _lastSystemNotificationDate = null;
+        });
+        await _saveProfile();
+      }
+      return;
+    }
+
+    final paymentCount = reminders
+        .where((item) => item.type == PolicyReminderType.payment)
+        .length;
+    final expiryCount = reminders
+        .where((item) => item.type == PolicyReminderType.expiry)
+        .length;
+    final sample = '${reminders.first.title}：${reminders.first.message}';
+
+    final scheduled = await ReminderNotificationService.instance
+        .scheduleDailyReminderAtNineAM(
+          total: reminders.length,
+          paymentCount: paymentCount,
+          expiryCount: expiryCount,
+          sample: sample,
+        );
+    if (!scheduled || !mounted) return;
+
+    final today = _formatDate(_today);
+    setState(() {
+      _lastSystemNotificationDate = '$today 09:00';
+    });
+    await _saveProfile();
+  }
+
+  Future<void> _triggerTestSystemNotification() async {
+    await _initializeSystemNotifications(requestPermission: true);
+    final sent = await ReminderNotificationService.instance
+        .showTestNotification();
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(sent ? '已發送測試通知' : '無法發送通知，請確認系統權限')),
+    );
   }
 
   int get _riskScore {
@@ -162,23 +500,105 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     if (_age < 30) score += 1;
     if (_age >= 30 && _age <= 45) score += 2;
     if (_age > 45) score += 3;
-    score += _dependents * 2;
+    score += min(_dependents * 2, 6);
     if (_hasMortgage) score += 3;
     if (!_hasExistingCoverage) score += 2;
-    return score;
+    if (_financialBufferMonths < 3) {
+      score += 2;
+    } else if (_financialBufferMonths < 6) {
+      score += 1;
+    }
+    if (_annualIncome < 60) score += 1;
+    return min(score, 15);
   }
 
   int get _recommendedLifeCoverage {
-    final base = (_dependents + 1) * 100;
-    final mortgage = _hasMortgage ? 300 : 0;
-    final ageFactor = _age > 45 ? 100 : 0;
-    return base + mortgage + ageFactor;
+    final incomeProtectionYears = _age <= 35
+        ? 12
+        : _age <= 45
+        ? 10
+        : 8;
+    final incomeNeed = _annualIncome * incomeProtectionYears;
+    final familyNeed = _dependents * 100;
+    final mortgageNeed = _hasMortgage ? 300 : 0;
+    final reserveOffset = ((_annualIncome / 12) * _financialBufferMonths)
+        .round();
+    final required = incomeNeed + familyNeed + mortgageNeed - reserveOffset;
+    return max(required, 120);
   }
 
   int get _recommendedMedicalCoverage {
-    if (_age < 30) return 100;
-    if (_age <= 45) return 150;
-    return 200;
+    final base = _age < 30
+        ? 120
+        : _age <= 45
+        ? 160
+        : 200;
+    final extra = _dependents * 20;
+    return min(base + extra, 320);
+  }
+
+  int get _recommendedCriticalCoverage {
+    final base = _riskScore >= 10
+        ? 200
+        : _riskScore >= 6
+        ? 150
+        : 100;
+    final mortgageExtra = _hasMortgage ? 20 : 0;
+    return min(base + mortgageExtra, 260);
+  }
+
+  int get _recommendedDisabilityCoverage {
+    final incomeFactor = (_annualIncome * 0.6).round();
+    final familyFactor = _dependents * 20;
+    return max(incomeFactor + familyFactor, 80);
+  }
+
+  int _coverageByType(String type) {
+    return _policies
+        .where((policy) => policy.type == type)
+        .fold(0, (sum, policy) => sum + policy.coverageAmount);
+  }
+
+  List<CoverageGapItem> get _coverageGapItems {
+    return [
+      CoverageGapItem(
+        type: '壽險',
+        recommendedCoverage: _recommendedLifeCoverage,
+        currentCoverage: _coverageByType('壽險'),
+      ),
+      CoverageGapItem(
+        type: '醫療險',
+        recommendedCoverage: _recommendedMedicalCoverage,
+        currentCoverage: _coverageByType('醫療險'),
+      ),
+      CoverageGapItem(
+        type: '重大疾病險',
+        recommendedCoverage: _recommendedCriticalCoverage,
+        currentCoverage: _coverageByType('重大疾病險'),
+      ),
+      CoverageGapItem(
+        type: '失能險',
+        recommendedCoverage: _recommendedDisabilityCoverage,
+        currentCoverage: _coverageByType('失能險'),
+      ),
+    ];
+  }
+
+  int get _totalRecommendedCoverage {
+    return _coverageGapItems.fold(
+      0,
+      (sum, item) => sum + item.recommendedCoverage,
+    );
+  }
+
+  int get _totalCoverageGap {
+    return _coverageGapItems.fold(0, (sum, item) => sum + item.gap);
+  }
+
+  double get _coverageCompletionRate {
+    if (_totalRecommendedCoverage <= 0) return 1.0;
+    final completed = _totalRecommendedCoverage - _totalCoverageGap;
+    return (completed / _totalRecommendedCoverage).clamp(0.0, 1.0).toDouble();
   }
 
   int get _totalMonthlyPremium {
@@ -252,6 +672,114 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     return '$y-$m-$d';
   }
 
+  int _estimateMonthlyPremium({
+    required int lifeCoverage,
+    required int medicalCoverage,
+    required int criticalCoverage,
+    required int disabilityCoverage,
+  }) {
+    final ageFactor = _age < 30
+        ? 1.0
+        : _age <= 45
+        ? 1.2
+        : 1.45;
+    final lifeCost = lifeCoverage * 4.2;
+    final medicalCost = medicalCoverage * 9.0;
+    final criticalCost = criticalCoverage * 7.8;
+    final disabilityCost = disabilityCoverage * 5.6;
+    final raw =
+        (lifeCost + medicalCost + criticalCost + disabilityCost) * ageFactor;
+    return raw.round();
+  }
+
+  PlanComparisonOption _buildPlanOption({
+    required String name,
+    required String description,
+    required double scale,
+  }) {
+    final life = max((_recommendedLifeCoverage * scale).round(), 80);
+    final medical = max((_recommendedMedicalCoverage * scale).round(), 60);
+    final critical = max((_recommendedCriticalCoverage * scale).round(), 50);
+    final disability = max(
+      (_recommendedDisabilityCoverage * scale).round(),
+      50,
+    );
+    return PlanComparisonOption(
+      name: name,
+      description: description,
+      lifeCoverage: life,
+      medicalCoverage: medical,
+      criticalCoverage: critical,
+      disabilityCoverage: disability,
+      estimatedPremium: _estimateMonthlyPremium(
+        lifeCoverage: life,
+        medicalCoverage: medical,
+        criticalCoverage: critical,
+        disabilityCoverage: disability,
+      ),
+    );
+  }
+
+  List<PlanComparisonOption> get _comparisonPlans {
+    return [
+      _buildPlanOption(
+        name: 'A 基礎防守',
+        description: '優先補上關鍵缺口，控制每月支出。',
+        scale: 0.8,
+      ),
+      _buildPlanOption(
+        name: 'B 平衡成長',
+        description: '兼顧保障完整度與預算平衡。',
+        scale: 1.0,
+      ),
+      _buildPlanOption(
+        name: 'C 完整進階',
+        description: '提高保障上限，預留醫療與失能彈性。',
+        scale: 1.25,
+      ),
+    ];
+  }
+
+  int get _recommendedPlanIndex {
+    final plans = _comparisonPlans;
+    if (plans.isEmpty) return 0;
+
+    var bestIndex = 0;
+    for (var i = 1; i < plans.length; i++) {
+      final current = plans[i];
+      final best = plans[bestIndex];
+      final currentWithinBudget = current.estimatedPremium <= _monthlyBudget;
+      final bestWithinBudget = best.estimatedPremium <= _monthlyBudget;
+
+      if (currentWithinBudget && !bestWithinBudget) {
+        bestIndex = i;
+        continue;
+      }
+
+      if (currentWithinBudget && bestWithinBudget) {
+        if (current.totalCoverage > best.totalCoverage) {
+          bestIndex = i;
+        }
+        continue;
+      }
+
+      if (!currentWithinBudget && !bestWithinBudget) {
+        final currentDelta = current.estimatedPremium - _monthlyBudget;
+        final bestDelta = best.estimatedPremium - _monthlyBudget;
+        if (currentDelta < bestDelta) {
+          bestIndex = i;
+        }
+      }
+    }
+    return bestIndex;
+  }
+
+  List<CoverageGapItem> get _priorityGapItems {
+    final sorted = List<CoverageGapItem>.from(_coverageGapItems)
+      ..sort((a, b) => b.gap.compareTo(a.gap));
+    return sorted.where((item) => item.gap > 0).take(3).toList();
+  }
+
   List<PolicyReminderItem> get _policyReminders {
     final reminders = <PolicyReminderItem>[];
     for (final policy in _policies) {
@@ -263,7 +791,10 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
       final paymentDaysLeft = _daysUntil(nextPaymentDate);
       final isPaymentBeforeExpiry =
           expiryDate == null || !nextPaymentDate.isAfter(expiryDate);
-      if (!isExpired && isPaymentBeforeExpiry && paymentDaysLeft <= 7) {
+      if (_enablePaymentReminders &&
+          !isExpired &&
+          isPaymentBeforeExpiry &&
+          paymentDaysLeft <= _paymentReminderWindowDays) {
         final paymentMessage = paymentDaysLeft == 0
             ? '今天需繳費（每月 ${policy.paymentDay} 日）'
             : '$paymentDaysLeft 天後需繳費（${_formatDate(nextPaymentDate)}）';
@@ -278,9 +809,10 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
         );
       }
 
-      if (expiryDate != null &&
+      if (_enableExpiryReminders &&
+          expiryDate != null &&
           expiryDaysLeft != null &&
-          expiryDaysLeft <= 60) {
+          expiryDaysLeft <= _expiryReminderWindowDays) {
         final expiryMessage = expiryDaysLeft >= 0
             ? '$expiryDaysLeft 天後到期（${_formatDate(expiryDate)}）'
             : '已到期 ${expiryDaysLeft.abs()} 天（${_formatDate(expiryDate)}）';
@@ -316,6 +848,13 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
     if (!_hasExistingCoverage) {
       items.add('尚無既有保障，先建立「醫療 + 壽險」雙核心架構。');
     }
+    final topGap = _priorityGapItems.isEmpty ? null : _priorityGapItems.first;
+    if (topGap != null) {
+      items.add('目前最大缺口是「${topGap.type}」，尚差 ${topGap.gap} 萬。');
+    }
+    if (_financialBufferMonths < 6) {
+      items.add('緊急預備金低於 6 個月，建議先補強現金流安全墊。');
+    }
     return items;
   }
 
@@ -325,6 +864,7 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
       _buildDashboard(context),
       _buildAssessment(context),
       _buildRecommendation(context),
+      _buildComparison(context),
       _buildPolicies(context),
     ];
 
@@ -337,7 +877,7 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
           child: pages[_selectedTab],
         ),
       ),
-      floatingActionButton: _selectedTab == 3
+      floatingActionButton: _selectedTab == 4
           ? FloatingActionButton.extended(
               onPressed: _addPolicy,
               icon: const Icon(Icons.add),
@@ -355,6 +895,7 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
           NavigationDestination(icon: Icon(Icons.dashboard), label: '總覽'),
           NavigationDestination(icon: Icon(Icons.fact_check), label: '評估'),
           NavigationDestination(icon: Icon(Icons.lightbulb), label: '建議'),
+          NavigationDestination(icon: Icon(Icons.compare_arrows), label: '比較'),
           NavigationDestination(icon: Icon(Icons.description), label: '保單'),
         ],
       ),
@@ -362,6 +903,15 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
   }
 
   Widget _buildDashboard(BuildContext context) {
+    final policyReminders = _policyReminders;
+    final paymentReminderCount = policyReminders
+        .where((item) => item.type == PolicyReminderType.payment)
+        .length;
+    final expiryReminderCount = policyReminders
+        .where((item) => item.type == PolicyReminderType.expiry)
+        .length;
+    final coverageCompletionPercent = (_coverageCompletionRate * 100).round();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -374,6 +924,8 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
                 Text('保障總覽', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
                 Text('風險評分：$_riskScore / 15'),
+                Text('家庭年收入：$_annualIncome 萬'),
+                Text('緊急預備金：$_financialBufferMonths 個月'),
                 Text('建議壽險保額：約 $_recommendedLifeCoverage 萬'),
                 Text('建議醫療險保額：約 $_recommendedMedicalCoverage 萬'),
                 Text('每月可規劃保費：$_monthlyBudget 元'),
@@ -381,6 +933,16 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
                 Text('已建檔保單：${_policies.length} 張'),
                 Text('已建檔總保額：$_totalCoverage 萬'),
                 Text('已建檔月繳保費：$_totalMonthlyPremium 元'),
+                const SizedBox(height: 8),
+                Text('整體保障完成度：$coverageCompletionPercent%'),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: _coverageCompletionRate,
+                    minHeight: 8,
+                  ),
+                ),
               ],
             ),
           ),
@@ -393,10 +955,32 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('保單缺口', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                ..._coverageGapItems.map((item) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _CoverageGapProgressRow(item: item),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('提醒摘要', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                _GapRow(label: '壽險', value: _hasExistingCoverage ? '中' : '高'),
-                _GapRow(label: '醫療險', value: _age > 45 ? '高' : '中'),
-                _GapRow(label: '重大疾病險', value: _riskScore >= 8 ? '高' : '中'),
+                Text(
+                  '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+                ),
+                Text(
+                  '$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆',
+                ),
               ],
             ),
           ),
@@ -439,6 +1023,32 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
                   onChanged: (value) {
                     _updateProfile(() {
                       _monthlyBudget = value.round();
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text('家庭年收入：$_annualIncome 萬'),
+                Slider(
+                  min: 30,
+                  max: 300,
+                  divisions: 27,
+                  value: _annualIncome.toDouble(),
+                  onChanged: (value) {
+                    _updateProfile(() {
+                      _annualIncome = value.round();
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text('緊急預備金：$_financialBufferMonths 個月'),
+                Slider(
+                  min: 0,
+                  max: 12,
+                  divisions: 12,
+                  value: _financialBufferMonths.toDouble(),
+                  onChanged: (value) {
+                    _updateProfile(() {
+                      _financialBufferMonths = value.round();
                     });
                   },
                 ),
@@ -489,11 +1099,40 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('缺口試算結果', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('建議總保障：$_totalRecommendedCoverage 萬'),
+                Text('目前總保障：$_totalCoverage 萬'),
+                Text('待補保障缺口：$_totalCoverageGap 萬'),
+                const SizedBox(height: 8),
+                ..._coverageGapItems.map((item) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _CoverageGapProgressRow(item: item),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildRecommendation(BuildContext context) {
+    final plans = _comparisonPlans;
+    final recommendedPlan = plans[_recommendedPlanIndex];
+    final budgetGap = recommendedPlan.estimatedPremium - _monthlyBudget;
+    final isWithinBudget = budgetGap <= 0;
+    final priorityGaps = _priorityGapItems;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -506,18 +1145,49 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '建議方案 A（基礎型）',
+                  '推薦方案：${recommendedPlan.name}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                Text('定期壽險 $_recommendedLifeCoverage 萬'),
-                Text('醫療實支實付 $_recommendedMedicalCoverage 萬'),
-                const Text('重大疾病一次金 100 萬'),
+                Text('定期壽險 ${recommendedPlan.lifeCoverage} 萬'),
+                Text('醫療實支實付 ${recommendedPlan.medicalCoverage} 萬'),
+                Text('重大疾病一次金 ${recommendedPlan.criticalCoverage} 萬'),
+                Text('失能扶助 ${recommendedPlan.disabilityCoverage} 萬'),
+                const SizedBox(height: 8),
+                Text('估算月繳：${recommendedPlan.estimatedPremium} 元'),
+                Text(
+                  isWithinBudget
+                      ? '較預算結餘 ${budgetGap.abs()} 元'
+                      : '較預算超出 $budgetGap 元',
+                ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
+        if (priorityGaps.isNotEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '優先補強順序',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  ...priorityGaps.map(
+                    (gap) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text('• ${gap.type}：尚缺 ${gap.gap} 萬'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (priorityGaps.isNotEmpty) const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -536,6 +1206,120 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildComparison(BuildContext context) {
+    final plans = _comparisonPlans;
+    final recommendedIndex = _recommendedPlanIndex;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('方案比較', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '以下方案會依「需求問卷 + 缺口試算」自動調整，'
+              '可用來和客戶快速對齊預算與保障優先順序。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('方案')),
+                DataColumn(label: Text('壽險(萬)')),
+                DataColumn(label: Text('醫療(萬)')),
+                DataColumn(label: Text('重疾(萬)')),
+                DataColumn(label: Text('失能(萬)')),
+                DataColumn(label: Text('估算月繳')),
+                DataColumn(label: Text('預算差額')),
+              ],
+              rows: List.generate(plans.length, (index) {
+                final plan = plans[index];
+                final budgetDelta = plan.estimatedPremium - _monthlyBudget;
+                final budgetText = budgetDelta <= 0
+                    ? '-${budgetDelta.abs()}'
+                    : '+$budgetDelta';
+                final isRecommended = index == recommendedIndex;
+                return DataRow(
+                  cells: [
+                    DataCell(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(plan.name),
+                          if (isRecommended) ...[
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.star,
+                              size: 16,
+                              color: Colors.amber,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    DataCell(Text('${plan.lifeCoverage}')),
+                    DataCell(Text('${plan.medicalCoverage}')),
+                    DataCell(Text('${plan.criticalCoverage}')),
+                    DataCell(Text('${plan.disabilityCoverage}')),
+                    DataCell(Text('${plan.estimatedPremium} 元')),
+                    DataCell(Text('$budgetText 元')),
+                  ],
+                );
+              }),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...List.generate(plans.length, (index) {
+          final plan = plans[index];
+          final budgetDelta = plan.estimatedPremium - _monthlyBudget;
+          final withinBudget = budgetDelta <= 0;
+          final isRecommended = index == recommendedIndex;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            plan.name,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        if (isRecommended) const Chip(label: Text('推薦')),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(plan.description),
+                    const SizedBox(height: 8),
+                    Text('估算月繳：${plan.estimatedPremium} 元'),
+                    Text(
+                      withinBudget
+                          ? '預算內，尚有 ${budgetDelta.abs()} 元彈性'
+                          : '超出預算 $budgetDelta 元',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -576,8 +1360,102 @@ class _InsuranceHomePageState extends State<InsuranceHomePage> {
                 Text('篩選後保額：$filteredCoverage 萬'),
                 Text('篩選後月繳保費：$filteredMonthlyPremium 元'),
                 const SizedBox(height: 8),
-                Text('7 日內繳費提醒：$paymentReminderCount 筆'),
-                Text('60 日內到期提醒：$expiryReminderCount 筆'),
+                Text(
+                  '$_paymentReminderWindowDays 日內繳費提醒：$paymentReminderCount 筆',
+                ),
+                Text(
+                  '$_expiryReminderWindowDays 日內到期提醒：$expiryReminderCount 筆',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('提醒設定', style: Theme.of(context).textTheme.titleMedium),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('啟用繳費提醒'),
+                  value: _enablePaymentReminders,
+                  onChanged: (value) {
+                    _updateProfile(() {
+                      _enablePaymentReminders = value;
+                    });
+                  },
+                ),
+                if (_enablePaymentReminders) ...[
+                  Text('提前 $_paymentReminderWindowDays 天提醒'),
+                  Slider(
+                    min: 1,
+                    max: 30,
+                    divisions: 29,
+                    value: _paymentReminderWindowDays.toDouble(),
+                    onChanged: (value) {
+                      _updateProfile(() {
+                        _paymentReminderWindowDays = value.round();
+                      });
+                    },
+                  ),
+                ],
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('啟用到期提醒'),
+                  value: _enableExpiryReminders,
+                  onChanged: (value) {
+                    _updateProfile(() {
+                      _enableExpiryReminders = value;
+                    });
+                  },
+                ),
+                if (_enableExpiryReminders) ...[
+                  Text('提前 $_expiryReminderWindowDays 天提醒'),
+                  Slider(
+                    min: 7,
+                    max: 180,
+                    divisions: 173,
+                    value: _expiryReminderWindowDays.toDouble(),
+                    onChanged: (value) {
+                      _updateProfile(() {
+                        _expiryReminderWindowDays = value.round();
+                      });
+                    },
+                  ),
+                ],
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('啟用系統通知'),
+                  subtitle: const Text('每天 09:00 自動推播（僅有提醒時）'),
+                  value: _enableSystemNotifications,
+                  onChanged: (value) {
+                    if (value) {
+                      _initializeSystemNotifications(requestPermission: true);
+                    }
+                    _updateProfile(() {
+                      _enableSystemNotifications = value;
+                      if (value) {
+                        _lastSystemNotificationDate = null;
+                      }
+                    });
+                  },
+                ),
+                if (_enableSystemNotifications) ...[
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    onPressed: _triggerTestSystemNotification,
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('發送測試通知'),
+                  ),
+                  Text(
+                    _lastSystemNotificationDate == null
+                        ? '尚未完成每日 09:00 排程同步'
+                        : '最近排程同步：$_lastSystemNotificationDate',
+                  ),
+                ],
               ],
             ),
           ),
@@ -1114,21 +1992,44 @@ class InsurancePolicy {
   }
 }
 
-class _GapRow extends StatelessWidget {
-  const _GapRow({required this.label, required this.value});
+class _CoverageGapProgressRow extends StatelessWidget {
+  const _CoverageGapProgressRow({required this.item});
 
-  final String label;
-  final String value;
+  final CoverageGapItem item;
 
   @override
   Widget build(BuildContext context) {
+    final completionPercent = (item.completionRate * 100).round();
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label),
-          const Spacer(),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              Expanded(child: Text(item.type)),
+              Text(
+                '建議 ${item.recommendedCoverage} 萬 / 目前 ${item.currentCoverage} 萬',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: item.completionRate,
+              minHeight: 6,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item.gap > 0
+                ? '仍缺口 ${item.gap} 萬（完成 $completionPercent%）'
+                : '已達建議保障（完成 $completionPercent%）',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
