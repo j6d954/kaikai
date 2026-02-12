@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'config/admin_ui_config.dart';
 import 'pages/admin_dashboard_page.dart';
 import 'pages/insurance_home_page.dart';
 
@@ -158,6 +159,12 @@ class InsuranceAdvisorApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case '/admin':
+            if (!isAdminUiEnabled) {
+              return MaterialPageRoute<void>(
+                builder: (_) => const InsuranceHomePage(),
+                settings: settings,
+              );
+            }
             return MaterialPageRoute<void>(
               builder: (_) => const AdminDashboardPage(),
               settings: settings,

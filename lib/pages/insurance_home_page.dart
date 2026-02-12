@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/admin_ui_config.dart';
 import '../models/insurance_models.dart';
 import '../providers/app_state_provider.dart';
 import '../services/reminder_notification_service.dart';
@@ -1007,13 +1008,14 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: '後台管理',
-            onPressed: () {
-              Navigator.of(context).pushNamed('/admin');
-            },
-            icon: const Icon(Icons.admin_panel_settings_outlined),
-          ),
+          if (isAdminUiEnabled)
+            IconButton(
+              tooltip: '後台管理',
+              onPressed: () {
+                Navigator.of(context).pushNamed('/admin');
+              },
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+            ),
         ],
       ),
       body: AnimatedSwitcher(

@@ -85,6 +85,11 @@ flutter run -d chrome --dart-define=INSURER_API_BASE_URL=http://localhost:8080
 - In app: click the app bar `後台管理` icon.
 - Direct route: `http://localhost:xxxxx/#/admin` (Flutter Web debug URL).
 
+Notes:
+
+- Admin UI is shown by default in debug mode. For release builds, enable it with:
+  `--dart-define=ADMIN_UI_ENABLED=true`
+
 ### Quick scripts
 
 ```bash
