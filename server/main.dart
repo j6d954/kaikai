@@ -3,16 +3,30 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'discovery_record_store.dart';
+
 final Uri? _upstreamBaseUri = _readOptionalUri('INSURER_UPSTREAM_BASE_URL');
 final String _defaultApiToken =
     Platform.environment['INSURER_API_TOKEN_DEFAULT'] ?? '';
 final String _gatewayApiKey = (Platform.environment['GATEWAY_API_KEY'] ?? '')
     .trim();
+final String _gatewayAdminApiKey =
+    (Platform.environment['GATEWAY_ADMIN_API_KEY'] ?? '').trim();
 final int _gatewayMaxRequestBodyBytes = _readBoundedEnvInt(
   'GATEWAY_MAX_REQUEST_BODY_BYTES',
   fallback: 131072,
   min: 1024,
   max: 2097152,
+);
+final String _gatewayDataFilePath =
+    (Platform.environment['GATEWAY_DATA_FILE_PATH'] ??
+            'server/data/discovery_records.json')
+        .trim();
+final int _gatewayAuditMaxRecords = _readBoundedEnvInt(
+  'GATEWAY_AUDIT_MAX_RECORDS',
+  fallback: 2000,
+  min: 100,
+  max: 50000,
 );
 final int _upstreamTimeoutMs = _readBoundedEnvInt(
   'INSURER_UPSTREAM_TIMEOUT_MS',
@@ -35,6 +49,13 @@ final int _upstreamRetryBaseDelayMs = _readBoundedEnvInt(
 
 int _requestSequence = 0;
 const int _maxCustomerReferenceLength = 128;
+const int _defaultAdminListLimit = 50;
+const int _maxAdminListLimit = 500;
+
+final DiscoveryRecordStore _discoveryRecordStore = DiscoveryRecordStore(
+  filePath: _gatewayDataFilePath,
+  maxRecords: _gatewayAuditMaxRecords,
+);
 
 const Map<String, List<String>> _insurerHintsByCode = {
   'cathay': ['國泰人壽', '國泰'],
@@ -91,7 +112,10 @@ Future<void> main() async {
     'port': port,
     'upstreamConfigured': _upstreamBaseUri != null,
     'gatewayAuthRequired': _gatewayApiKey.isNotEmpty,
+    'adminAuthRequired': _gatewayAdminApiKey.isNotEmpty,
     'gatewayMaxRequestBodyBytes': _gatewayMaxRequestBodyBytes,
+    'gatewayDataFilePath': _gatewayDataFilePath,
+    'gatewayAuditMaxRecords': _gatewayAuditMaxRecords,
     'upstreamTimeoutMs': _upstreamTimeoutMs,
     'upstreamMaxAttempts': _upstreamMaxAttempts,
     'retryBaseDelayMs': _upstreamRetryBaseDelayMs,
@@ -141,6 +165,130 @@ Future<void> _handleRequest(HttpRequest request) async {
             'timestamp': DateTime.now().toUtc().toIso8601String(),
             'upstreamConfigured': _upstreamBaseUri != null,
           }, requestId),
+        );
+        return;
+      }
+
+      if (segments.length >= 3 &&
+          segments[0] == 'v1' &&
+          segments[1] == 'admin' &&
+          segments[2] == 'discovery-records') {
+        route = 'admin_discovery_records';
+
+        if (!_isAdminAuthorized(request)) {
+          await respondJson(
+            status: HttpStatus.unauthorized,
+            body: _buildErrorBody(
+              code: 'admin_unauthorized',
+              message: 'Missing or invalid admin API key.',
+              requestId: requestId,
+            ),
+          );
+          return;
+        }
+
+        if (request.method == 'GET' && segments.length == 3) {
+          final limit = _readBoundedQueryInt(
+            request.uri.queryParameters['limit'],
+            fallback: _defaultAdminListLimit,
+            min: 1,
+            max: _maxAdminListLimit,
+          );
+          final offset = _readBoundedQueryInt(
+            request.uri.queryParameters['offset'],
+            fallback: 0,
+            min: 0,
+            max: 1000000,
+          );
+          final insurerCodeFilter = request.uri.queryParameters['insurerCode']
+              ?.trim();
+          final statusFilter = request.uri.queryParameters['status']?.trim();
+
+          final result = await _discoveryRecordStore.list(
+            limit: limit,
+            offset: offset,
+            insurerCode: insurerCodeFilter == null || insurerCodeFilter.isEmpty
+                ? null
+                : insurerCodeFilter,
+            status: statusFilter == null || statusFilter.isEmpty
+                ? null
+                : statusFilter,
+          );
+
+          await respondJson(
+            status: HttpStatus.ok,
+            body: _attachRequestId({
+              'items': result.items,
+              'total': result.total,
+              'limit': limit,
+              'offset': offset,
+            }, requestId),
+          );
+          return;
+        }
+
+        if (request.method == 'GET' &&
+            segments.length == 4 &&
+            segments[3] == 'stats') {
+          final stats = await _discoveryRecordStore.stats();
+          await respondJson(
+            status: HttpStatus.ok,
+            body: _attachRequestId(stats, requestId),
+          );
+          return;
+        }
+
+        if (request.method == 'GET' && segments.length == 4) {
+          final recordId = segments[3].trim();
+          if (recordId.isEmpty) {
+            await respondJson(
+              status: HttpStatus.badRequest,
+              body: _buildErrorBody(
+                code: 'invalid_record_id',
+                message: 'Invalid record id.',
+                requestId: requestId,
+              ),
+            );
+            return;
+          }
+
+          final record = await _discoveryRecordStore.getById(recordId);
+          if (record == null) {
+            await respondJson(
+              status: HttpStatus.notFound,
+              body: _buildErrorBody(
+                code: 'record_not_found',
+                message: 'Record not found.',
+                requestId: requestId,
+                details: {'id': recordId},
+              ),
+            );
+            return;
+          }
+
+          await respondJson(
+            status: HttpStatus.ok,
+            body: _attachRequestId(record, requestId),
+          );
+          return;
+        }
+
+        if (request.method == 'DELETE' && segments.length == 3) {
+          final removed = await _discoveryRecordStore.clear();
+          await respondJson(
+            status: HttpStatus.ok,
+            body: _attachRequestId({'removed': removed}, requestId),
+          );
+          return;
+        }
+
+        await respondJson(
+          status: HttpStatus.methodNotAllowed,
+          body: _buildErrorBody(
+            code: 'method_not_allowed',
+            message: 'Method not allowed for this route.',
+            requestId: requestId,
+          ),
         );
         return;
       }
@@ -212,6 +360,13 @@ Future<void> _handleRequest(HttpRequest request) async {
           insurerCode: insurerCode,
           payload: payload,
           requestId: requestId,
+        );
+        await _persistDiscoveryRecord(
+          requestId: requestId,
+          insurerCode: insurerCode,
+          payload: payload,
+          responseStatusCode: result.statusCode,
+          responseBody: result.body,
         );
         await respondJson(
           status: result.statusCode,
@@ -299,6 +454,83 @@ Future<({int statusCode, Map<String, dynamic> body})> _handleDiscovery({
     apiToken: token,
     requestId: requestId,
   );
+}
+
+bool _isAdminAuthorized(HttpRequest request) {
+  if (_gatewayAdminApiKey.isEmpty) return true;
+  return request.headers.value('x-admin-api-key')?.trim() ==
+      _gatewayAdminApiKey;
+}
+
+int _readBoundedQueryInt(
+  String? raw, {
+  required int fallback,
+  required int min,
+  required int max,
+}) {
+  if (raw == null || raw.trim().isEmpty) return fallback;
+  final parsed = int.tryParse(raw.trim());
+  if (parsed == null) return fallback;
+  if (parsed < min) return min;
+  if (parsed > max) return max;
+  return parsed;
+}
+
+Future<void> _persistDiscoveryRecord({
+  required String requestId,
+  required String insurerCode,
+  required Map<String, dynamic> payload,
+  required int responseStatusCode,
+  required Map<String, dynamic> responseBody,
+}) async {
+  try {
+    final status = _normalizeDiscoveryStatusValue(responseBody['status']);
+    final codeRaw = responseBody['code'];
+    final code = codeRaw is String && codeRaw.trim().isNotEmpty
+        ? codeRaw.trim()
+        : _defaultGatewayCodeForStatus(status);
+    final noteRaw = responseBody['note'];
+    final note = noteRaw is String && noteRaw.trim().isNotEmpty
+        ? noteRaw.trim()
+        : _defaultGatewayNoteForStatus(status);
+    final policiesRaw = responseBody['policies'];
+    final matchedPolicyCount = policiesRaw is List ? policiesRaw.length : 0;
+
+    final knownPolicies = _readKnownPolicies(payload['knownPolicies']);
+    final targetInsurersRaw = payload['targetInsurers'];
+    final targetInsurersCount = targetInsurersRaw is List
+        ? targetInsurersRaw.length
+        : 0;
+
+    final source = switch (code) {
+      'local_fallback_found' || 'local_fallback_no_data' => 'local_fallback',
+      'token_not_configured' => 'gateway',
+      _ when code.startsWith('upstream_') => 'upstream',
+      _ => 'unknown',
+    };
+
+    await _discoveryRecordStore.append({
+      'id': requestId,
+      'requestId': requestId,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'insurerCode': insurerCode,
+      'status': status,
+      'code': code,
+      'note': note,
+      'responseStatusCode': responseStatusCode,
+      'source': source,
+      'customerReference': (payload['customerReference'] as String?)?.trim(),
+      'knownPoliciesCount': knownPolicies.length,
+      'targetInsurersCount': targetInsurersCount,
+      'matchedPoliciesCount': matchedPolicyCount,
+    });
+  } catch (error) {
+    _logEvent('discovery_record_persist_failed', {
+      'requestId': requestId,
+      'insurerCode': insurerCode,
+      'error': '$error',
+    });
+  }
 }
 
 Future<_JsonBodyReadResult> _readJsonBody(HttpRequest request) async {
@@ -830,7 +1062,7 @@ void _setCorsHeaders(HttpResponse response) {
   );
   response.headers.set(
     HttpHeaders.accessControlAllowHeadersHeader,
-    'Content-Type,Authorization,X-Gateway-Api-Key',
+    'Content-Type,Authorization,X-Gateway-Api-Key,X-Admin-Api-Key',
   );
 }
 

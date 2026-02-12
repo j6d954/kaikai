@@ -234,6 +234,145 @@ void main() {
     },
   );
 
+  test('admin list endpoint returns persisted discovery records', () async {
+    final gateway = await _startGateway();
+    final client = http.Client();
+
+    try {
+      final discoveryResponse = await client.post(
+        gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'customerReference': 'cust-admin-001',
+          'knownPolicies': [
+            {
+              'id': 'p1',
+              'type': '壽險',
+              'insurer': '國泰人壽',
+              'coverageAmount': 500,
+              'monthlyPremium': 2500,
+              'paymentDay': 5,
+              'effectiveDate': '2024-01-01T00:00:00.000',
+              'expiryDate': null,
+              'note': '',
+            },
+          ],
+        }),
+      );
+      expect(discoveryResponse.statusCode, HttpStatus.ok);
+      final discoveryBody =
+          jsonDecode(discoveryResponse.body) as Map<String, dynamic>;
+      final createdId = discoveryBody['requestId'] as String;
+
+      final listResponse = await client.get(
+        gateway.baseUri.resolve('/v1/admin/discovery-records?limit=10'),
+      );
+      expect(listResponse.statusCode, HttpStatus.ok);
+      final listBody = jsonDecode(listResponse.body) as Map<String, dynamic>;
+      expect(listBody['total'], greaterThanOrEqualTo(1));
+      expect(listBody['items'], isA<List<dynamic>>());
+      final items = (listBody['items'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      expect(items.any((item) => item['id'] == createdId), isTrue);
+
+      final getResponse = await client.get(
+        gateway.baseUri.resolve('/v1/admin/discovery-records/$createdId'),
+      );
+      expect(getResponse.statusCode, HttpStatus.ok);
+      final getBody = jsonDecode(getResponse.body) as Map<String, dynamic>;
+      expect(getBody['id'], createdId);
+      expect(getBody['status'], 'found');
+      expect(getBody['insurerCode'], 'cathay');
+
+      final statsResponse = await client.get(
+        gateway.baseUri.resolve('/v1/admin/discovery-records/stats'),
+      );
+      expect(statsResponse.statusCode, HttpStatus.ok);
+      final statsBody = jsonDecode(statsResponse.body) as Map<String, dynamic>;
+      expect(statsBody['total'], greaterThanOrEqualTo(1));
+      expect(statsBody['byStatus'], isA<Map<String, dynamic>>());
+    } finally {
+      client.close();
+      await gateway.stop();
+    }
+  });
+
+  test(
+    'admin endpoints return 401 when admin key is configured and missing',
+    () async {
+      final gateway = await _startGateway(
+        extraEnv: {'GATEWAY_ADMIN_API_KEY': 'admin-secret'},
+      );
+      final client = http.Client();
+
+      try {
+        final unauthorized = await client.get(
+          gateway.baseUri.resolve('/v1/admin/discovery-records'),
+        );
+        expect(unauthorized.statusCode, HttpStatus.unauthorized);
+        final unauthorizedBody =
+            jsonDecode(unauthorized.body) as Map<String, dynamic>;
+        expect(unauthorizedBody['code'], 'admin_unauthorized');
+
+        final authorized = await client.get(
+          gateway.baseUri.resolve('/v1/admin/discovery-records'),
+          headers: {'x-admin-api-key': 'admin-secret'},
+        );
+        expect(authorized.statusCode, HttpStatus.ok);
+      } finally {
+        client.close();
+        await gateway.stop();
+      }
+    },
+  );
+
+  test('admin delete endpoint clears persisted discovery records', () async {
+    final gateway = await _startGateway();
+    final client = http.Client();
+
+    try {
+      final firstCreate = await client.post(
+        gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'customerReference': 'cust-clear-001',
+          'knownPolicies': [],
+        }),
+      );
+      expect(firstCreate.statusCode, HttpStatus.ok);
+
+      final secondCreate = await client.post(
+        gateway.baseUri.resolve('/v1/insurers/fubon/policies/discovery'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'customerReference': 'cust-clear-002',
+          'knownPolicies': [],
+        }),
+      );
+      expect(secondCreate.statusCode, HttpStatus.ok);
+
+      final deleteResponse = await client.delete(
+        gateway.baseUri.resolve('/v1/admin/discovery-records'),
+      );
+      expect(deleteResponse.statusCode, HttpStatus.ok);
+      final deleteBody =
+          jsonDecode(deleteResponse.body) as Map<String, dynamic>;
+      expect(deleteBody['removed'], greaterThanOrEqualTo(2));
+
+      final listResponse = await client.get(
+        gateway.baseUri.resolve('/v1/admin/discovery-records'),
+      );
+      expect(listResponse.statusCode, HttpStatus.ok);
+      final listBody = jsonDecode(listResponse.body) as Map<String, dynamic>;
+      expect(listBody['total'], 0);
+    } finally {
+      client.close();
+      await gateway.stop();
+    }
+  });
+
   test(
     'gateway retries on upstream 503 and returns success on second attempt',
     () async {
@@ -381,6 +520,7 @@ class _RunningGateway {
   _RunningGateway({
     required this.process,
     required this.port,
+    required this.tempDir,
     required this.stdoutSub,
     required this.stderrSub,
     required this.logBuffer,
@@ -388,6 +528,7 @@ class _RunningGateway {
 
   final Process process;
   final int port;
+  final Directory tempDir;
   final StreamSubscription<String> stdoutSub;
   final StreamSubscription<String> stderrSub;
   final StringBuffer logBuffer;
@@ -397,21 +538,27 @@ class _RunningGateway {
   Future<void> stop() async {
     await stdoutSub.cancel();
     await stderrSub.cancel();
-    if (process.kill(ProcessSignal.sigterm)) {
+    try {
+      if (process.kill(ProcessSignal.sigterm)) {
+        try {
+          await process.exitCode.timeout(const Duration(seconds: 3));
+        } on TimeoutException {
+          process.kill(ProcessSignal.sigkill);
+          await process.exitCode.timeout(const Duration(seconds: 3));
+        }
+        return;
+      }
+
       try {
-        await process.exitCode.timeout(const Duration(seconds: 3));
+        await process.exitCode.timeout(const Duration(seconds: 1));
       } on TimeoutException {
         process.kill(ProcessSignal.sigkill);
         await process.exitCode.timeout(const Duration(seconds: 3));
       }
-      return;
-    }
-
-    try {
-      await process.exitCode.timeout(const Duration(seconds: 1));
-    } on TimeoutException {
-      process.kill(ProcessSignal.sigkill);
-      await process.exitCode.timeout(const Duration(seconds: 3));
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
     }
   }
 }
@@ -422,12 +569,19 @@ Future<_RunningGateway> _startGateway({
   final port = await _pickFreePort();
   final logBuffer = StringBuffer();
   final projectDir = Directory.current.path;
+  final tempDir = await Directory.systemTemp.createTemp('gateway-test-data.');
+  final defaultDataFilePath = '${tempDir.path}/discovery_records.json';
 
   final process = await Process.start(
     'dart',
     ['run', 'server/main.dart'],
     workingDirectory: projectDir,
-    environment: {...Platform.environment, ...extraEnv, 'PORT': '$port'},
+    environment: {
+      ...Platform.environment,
+      'PORT': '$port',
+      'GATEWAY_DATA_FILE_PATH': defaultDataFilePath,
+      ...extraEnv,
+    },
   );
 
   final stdoutSub = process.stdout
@@ -446,6 +600,7 @@ Future<_RunningGateway> _startGateway({
   final gateway = _RunningGateway(
     process: process,
     port: port,
+    tempDir: tempDir,
     stdoutSub: stdoutSub,
     stderrSub: stderrSub,
     logBuffer: logBuffer,

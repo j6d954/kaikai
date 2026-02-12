@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Gateway runtime data
+/server/data/
+/.gateway.log
+
 # Symbolication related
 app.*.symbols
 

@@ -54,6 +54,9 @@ Optional env vars for upstream forwarding:
 - `INSURER_UPSTREAM_RETRY_BASE_DELAY_MS` (default: `250`)
 - `GATEWAY_MAX_REQUEST_BODY_BYTES` (default: `131072`)
 - `GATEWAY_API_KEY` (optional: when set, request must send `x-gateway-api-key`)
+- `GATEWAY_ADMIN_API_KEY` (optional: when set, admin routes require `x-admin-api-key`)
+- `GATEWAY_DATA_FILE_PATH` (default: `server/data/discovery_records.json`)
+- `GATEWAY_AUDIT_MAX_RECORDS` (default: `2000`)
 - `INSURER_API_TOKEN_DEFAULT`
 - `INSURER_API_TOKEN_CATHAY`, `INSURER_API_TOKEN_FUBON`, ...
 
@@ -98,9 +101,23 @@ flutter run -d chrome --dart-define=INSURER_API_BASE_URL=http://localhost:8080
 flutter test test/server/gateway_contract_test.dart
 ```
 
+### Admin routes (discovery audit records)
+
+```bash
+# List records
+curl http://localhost:8080/v1/admin/discovery-records
+
+# Stats
+curl http://localhost:8080/v1/admin/discovery-records/stats
+
+# Clear records
+curl -X DELETE http://localhost:8080/v1/admin/discovery-records
+```
+
 Notes:
 
 - Frontend no longer sends insurer tokens.
 - Backend adds bearer token when calling upstream (if configured).
 - If upstream is not configured, backend returns a local fallback response.
+- Discovery requests are persisted to the local data file for admin queries.
 - Gateway logs JSON lines for request/outbound retry events.
