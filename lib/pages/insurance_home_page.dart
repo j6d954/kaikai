@@ -1006,6 +1006,15 @@ class _InsuranceHomePageState extends ConsumerState<InsuranceHomePage> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: '後台管理',
+            onPressed: () {
+              Navigator.of(context).pushNamed('/admin');
+            },
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+        ],
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),

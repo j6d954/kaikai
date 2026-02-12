@@ -79,6 +79,11 @@ docker run --rm -p 8080:8080 --env-file server/.env.example insurance-gateway
 flutter run -d chrome --dart-define=INSURER_API_BASE_URL=http://localhost:8080
 ```
 
+### 4) Open Admin Dashboard UI
+
+- In app: click the app bar `後台管理` icon.
+- Direct route: `http://localhost:xxxxx/#/admin` (Flutter Web debug URL).
+
 ### Quick scripts
 
 ```bash
