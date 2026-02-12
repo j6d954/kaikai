@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_application_1/main.dart';
@@ -6,7 +7,7 @@ void main() {
   testWidgets('Insurance advisor home renders key sections', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const InsuranceAdvisorApp());
+    await tester.pumpWidget(const ProviderScope(child: InsuranceAdvisorApp()));
 
     expect(find.text('個人保險顧問'), findsOneWidget);
     expect(find.text('保障總覽'), findsOneWidget);
