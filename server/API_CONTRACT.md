@@ -13,6 +13,7 @@ This document defines the HTTP contract for the local insurer gateway in `server
 - Response includes `x-request-id` header
 - Optional request auth header: `x-gateway-api-key` (required only when `GATEWAY_API_KEY` is configured)
 - Optional admin auth header: `x-admin-api-key` (required only when `GATEWAY_ADMIN_API_KEY` is configured)
+- Optional admin write auth header: `x-admin-write-api-key` (required only when `GATEWAY_ADMIN_WRITE_API_KEY` is configured, used for DELETE)
 
 ## Supported Insurer Codes
 
@@ -126,6 +127,14 @@ Query params:
 - `offset` (default `0`)
 - `insurerCode` (optional exact match)
 - `status` (optional exact match: `found|no_data|unavailable|failed`)
+- `requestId` (optional substring match)
+- `customerReference` (optional substring match)
+- `code` (optional substring match)
+- `source` (optional exact match: `local_fallback|gateway|upstream|unknown`)
+- `startAt` (optional ISO-8601 datetime, inclusive)
+- `endAt` (optional ISO-8601 datetime, inclusive)
+- `sortBy` (optional: `createdAt|status|insurerCode|matchedPoliciesCount|responseStatusCode`, default `createdAt`)
+- `sortOrder` (optional: `asc|desc`, default `desc`)
 
 Response `200`:
 
@@ -225,6 +234,7 @@ Returned for validation/routing errors (`4xx`) and unexpected server errors (`50
 - `invalid_payload`
 - `unauthorized`
 - `admin_unauthorized`
+- `admin_write_unauthorized`
 - `unsupported_insurer`
 - `payload_too_large`
 - `method_not_allowed`

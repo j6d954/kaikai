@@ -12,6 +12,8 @@ final String _gatewayApiKey = (Platform.environment['GATEWAY_API_KEY'] ?? '')
     .trim();
 final String _gatewayAdminApiKey =
     (Platform.environment['GATEWAY_ADMIN_API_KEY'] ?? '').trim();
+final String _gatewayAdminWriteApiKey =
+    (Platform.environment['GATEWAY_ADMIN_WRITE_API_KEY'] ?? '').trim();
 final int _gatewayMaxRequestBodyBytes = _readBoundedEnvInt(
   'GATEWAY_MAX_REQUEST_BODY_BYTES',
   fallback: 131072,
@@ -113,6 +115,7 @@ Future<void> main() async {
     'upstreamConfigured': _upstreamBaseUri != null,
     'gatewayAuthRequired': _gatewayApiKey.isNotEmpty,
     'adminAuthRequired': _gatewayAdminApiKey.isNotEmpty,
+    'adminWriteAuthRequired': _gatewayAdminWriteApiKey.isNotEmpty,
     'gatewayMaxRequestBodyBytes': _gatewayMaxRequestBodyBytes,
     'gatewayDataFilePath': _gatewayDataFilePath,
     'gatewayAuditMaxRecords': _gatewayAuditMaxRecords,
@@ -180,7 +183,7 @@ Future<void> _handleRequest(HttpRequest request) async {
             status: HttpStatus.unauthorized,
             body: _buildErrorBody(
               code: 'admin_unauthorized',
-              message: 'Missing or invalid admin API key.',
+              message: '缺少或無效的管理端金鑰。',
               requestId: requestId,
             ),
           );
@@ -203,6 +206,26 @@ Future<void> _handleRequest(HttpRequest request) async {
           final insurerCodeFilter = request.uri.queryParameters['insurerCode']
               ?.trim();
           final statusFilter = request.uri.queryParameters['status']?.trim();
+          final requestIdFilter = request.uri.queryParameters['requestId']
+              ?.trim();
+          final customerReferenceFilter = request
+              .uri
+              .queryParameters['customerReference']
+              ?.trim();
+          final codeFilter = request.uri.queryParameters['code']?.trim();
+          final sourceFilter = request.uri.queryParameters['source']?.trim();
+          final startAtFilter = _readOptionalDateTime(
+            request.uri.queryParameters['startAt'],
+          );
+          final endAtFilter = _readOptionalDateTime(
+            request.uri.queryParameters['endAt'],
+          );
+          final sortBy = _normalizeAdminSortBy(
+            request.uri.queryParameters['sortBy']?.trim(),
+          );
+          final sortOrder = _normalizeAdminSortOrder(
+            request.uri.queryParameters['sortOrder']?.trim(),
+          );
 
           final result = await _discoveryRecordStore.list(
             limit: limit,
@@ -213,6 +236,22 @@ Future<void> _handleRequest(HttpRequest request) async {
             status: statusFilter == null || statusFilter.isEmpty
                 ? null
                 : statusFilter,
+            requestId: requestIdFilter == null || requestIdFilter.isEmpty
+                ? null
+                : requestIdFilter,
+            customerReference:
+                customerReferenceFilter == null ||
+                    customerReferenceFilter.isEmpty
+                ? null
+                : customerReferenceFilter,
+            code: codeFilter == null || codeFilter.isEmpty ? null : codeFilter,
+            source: sourceFilter == null || sourceFilter.isEmpty
+                ? null
+                : sourceFilter,
+            startTime: startAtFilter,
+            endTime: endAtFilter,
+            sortBy: sortBy,
+            sortOrder: sortOrder,
           );
 
           await respondJson(
@@ -245,7 +284,7 @@ Future<void> _handleRequest(HttpRequest request) async {
               status: HttpStatus.badRequest,
               body: _buildErrorBody(
                 code: 'invalid_record_id',
-                message: 'Invalid record id.',
+                message: '紀錄編號無效。',
                 requestId: requestId,
               ),
             );
@@ -258,7 +297,7 @@ Future<void> _handleRequest(HttpRequest request) async {
               status: HttpStatus.notFound,
               body: _buildErrorBody(
                 code: 'record_not_found',
-                message: 'Record not found.',
+                message: '查無此紀錄。',
                 requestId: requestId,
                 details: {'id': recordId},
               ),
@@ -274,6 +313,17 @@ Future<void> _handleRequest(HttpRequest request) async {
         }
 
         if (request.method == 'DELETE' && segments.length == 3) {
+          if (!_isAdminWriteAuthorized(request)) {
+            await respondJson(
+              status: HttpStatus.unauthorized,
+              body: _buildErrorBody(
+                code: 'admin_write_unauthorized',
+                message: '缺少或無效的管理端寫入金鑰。',
+                requestId: requestId,
+              ),
+            );
+            return;
+          }
           final removed = await _discoveryRecordStore.clear();
           await respondJson(
             status: HttpStatus.ok,
@@ -286,7 +336,7 @@ Future<void> _handleRequest(HttpRequest request) async {
           status: HttpStatus.methodNotAllowed,
           body: _buildErrorBody(
             code: 'method_not_allowed',
-            message: 'Method not allowed for this route.',
+            message: '此路由不支援該方法。',
             requestId: requestId,
           ),
         );
@@ -462,6 +512,14 @@ bool _isAdminAuthorized(HttpRequest request) {
       _gatewayAdminApiKey;
 }
 
+bool _isAdminWriteAuthorized(HttpRequest request) {
+  if (_gatewayAdminWriteApiKey.isEmpty) {
+    return _isAdminAuthorized(request);
+  }
+  return request.headers.value('x-admin-write-api-key')?.trim() ==
+      _gatewayAdminWriteApiKey;
+}
+
 int _readBoundedQueryInt(
   String? raw, {
   required int fallback,
@@ -474,6 +532,28 @@ int _readBoundedQueryInt(
   if (parsed < min) return min;
   if (parsed > max) return max;
   return parsed;
+}
+
+DateTime? _readOptionalDateTime(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  return DateTime.tryParse(raw.trim());
+}
+
+String _normalizeAdminSortBy(String? raw) {
+  switch (raw) {
+    case 'createdAt':
+    case 'status':
+    case 'insurerCode':
+    case 'matchedPoliciesCount':
+    case 'responseStatusCode':
+      return raw!;
+    default:
+      return 'createdAt';
+  }
+}
+
+String _normalizeAdminSortOrder(String? raw) {
+  return raw == 'asc' ? 'asc' : 'desc';
 }
 
 Future<void> _persistDiscoveryRecord({
@@ -1058,11 +1138,11 @@ void _setCorsHeaders(HttpResponse response) {
   response.headers.set(HttpHeaders.accessControlAllowOriginHeader, '*');
   response.headers.set(
     HttpHeaders.accessControlAllowMethodsHeader,
-    'GET,POST,OPTIONS',
+    'GET,POST,DELETE,OPTIONS',
   );
   response.headers.set(
     HttpHeaders.accessControlAllowHeadersHeader,
-    'Content-Type,Authorization,X-Gateway-Api-Key,X-Admin-Api-Key',
+    'Content-Type,Authorization,X-Gateway-Api-Key,X-Admin-Api-Key,X-Admin-Write-Api-Key',
   );
 }
 

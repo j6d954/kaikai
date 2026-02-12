@@ -55,6 +55,7 @@ Optional env vars for upstream forwarding:
 - `GATEWAY_MAX_REQUEST_BODY_BYTES` (default: `131072`)
 - `GATEWAY_API_KEY` (optional: when set, request must send `x-gateway-api-key`)
 - `GATEWAY_ADMIN_API_KEY` (optional: when set, admin routes require `x-admin-api-key`)
+- `GATEWAY_ADMIN_WRITE_API_KEY` (optional: when set, admin DELETE requires `x-admin-write-api-key`)
 - `GATEWAY_DATA_FILE_PATH` (default: `server/data/discovery_records.json`)
 - `GATEWAY_AUDIT_MAX_RECORDS` (default: `2000`)
 - `INSURER_API_TOKEN_DEFAULT`

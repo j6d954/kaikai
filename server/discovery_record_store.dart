@@ -27,20 +27,117 @@ class DiscoveryRecordStore {
     required int offset,
     String? insurerCode,
     String? status,
+    String? requestId,
+    String? customerReference,
+    String? code,
+    String? source,
+    DateTime? startTime,
+    DateTime? endTime,
+    String sortBy = 'createdAt',
+    String sortOrder = 'desc',
   }) {
     return _withLock(() async {
       final records = await _loadRecords();
-      final latestFirst = records.reversed.toList(growable: false);
-      final filtered = latestFirst
-          .where((item) {
-            final insurerMatched =
-                insurerCode == null ||
-                (item['insurerCode'] as String?)?.trim() == insurerCode;
-            final statusMatched =
-                status == null || (item['status'] as String?)?.trim() == status;
-            return insurerMatched && statusMatched;
-          })
-          .toList(growable: false);
+      final normalizedStart = startTime?.toUtc();
+      final normalizedEnd = endTime?.toUtc();
+
+      bool containsText(String? value, String? query) {
+        if (query == null || query.trim().isEmpty) return true;
+        if (value == null || value.trim().isEmpty) return false;
+        return value.toLowerCase().contains(query.trim().toLowerCase());
+      }
+
+      DateTime parseTime(String? raw) {
+        if (raw == null || raw.trim().isEmpty) {
+          return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        }
+        final parsed = DateTime.tryParse(raw);
+        return parsed?.toUtc() ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      }
+
+      bool matchDateRange(String? raw) {
+        if (normalizedStart == null && normalizedEnd == null) return true;
+        final createdAt = parseTime(raw);
+        if (normalizedStart != null && createdAt.isBefore(normalizedStart)) {
+          return false;
+        }
+        if (normalizedEnd != null && createdAt.isAfter(normalizedEnd)) {
+          return false;
+        }
+        return true;
+      }
+
+      final filtered = records.where((item) {
+        final insurerMatched =
+            insurerCode == null ||
+            (item['insurerCode'] as String?)?.trim() == insurerCode;
+        final statusMatched =
+            status == null || (item['status'] as String?)?.trim() == status;
+        final sourceMatched =
+            source == null || (item['source'] as String?)?.trim() == source;
+        final requestIdValue =
+            (item['requestId'] as String?)?.trim() ??
+            (item['id'] as String?)?.trim();
+        final requestIdMatched = containsText(requestIdValue, requestId);
+        final customerMatched = containsText(
+          item['customerReference'] as String?,
+          customerReference,
+        );
+        final codeMatched = containsText(item['code'] as String?, code);
+        final dateMatched = matchDateRange(item['createdAt'] as String?);
+        return insurerMatched &&
+            statusMatched &&
+            sourceMatched &&
+            requestIdMatched &&
+            customerMatched &&
+            codeMatched &&
+            dateMatched;
+      }).toList();
+
+      int compareInt(dynamic a, dynamic b) {
+        final aValue = a is int ? a : int.tryParse('$a') ?? 0;
+        final bValue = b is int ? b : int.tryParse('$b') ?? 0;
+        return aValue.compareTo(bValue);
+      }
+
+      int compareString(dynamic a, dynamic b) {
+        final aValue = (a is String ? a : a?.toString() ?? '').trim();
+        final bValue = (b is String ? b : b?.toString() ?? '').trim();
+        return aValue.compareTo(bValue);
+      }
+
+      filtered.sort((a, b) {
+        int result;
+        switch (sortBy) {
+          case 'status':
+            result = compareString(a['status'], b['status']);
+            break;
+          case 'insurerCode':
+            result = compareString(a['insurerCode'], b['insurerCode']);
+            break;
+          case 'matchedPoliciesCount':
+            result = compareInt(
+              a['matchedPoliciesCount'],
+              b['matchedPoliciesCount'],
+            );
+            break;
+          case 'responseStatusCode':
+            result = compareInt(
+              a['responseStatusCode'],
+              b['responseStatusCode'],
+            );
+            break;
+          case 'createdAt':
+          default:
+            result = parseTime(
+              a['createdAt'] as String?,
+            ).compareTo(parseTime(b['createdAt'] as String?));
+            break;
+        }
+        if (sortOrder == 'asc') return result;
+        return -result;
+      });
 
       final safeOffset = offset < 0 ? 0 : offset;
       final safeLimit = limit < 1 ? 1 : limit;

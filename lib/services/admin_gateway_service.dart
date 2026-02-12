@@ -102,12 +102,14 @@ class AdminGatewayService {
   AdminGatewayService({
     required this.baseUrl,
     this.adminApiKey,
+    this.adminWriteApiKey,
     this.gatewayApiKey,
     http.Client? client,
   }) : _client = client ?? http.Client();
 
   final String baseUrl;
   final String? adminApiKey;
+  final String? adminWriteApiKey;
   final String? gatewayApiKey;
   final http.Client _client;
 
@@ -128,6 +130,14 @@ class AdminGatewayService {
     required int offset,
     String? insurerCode,
     String? status,
+    String? requestId,
+    String? customerReference,
+    String? code,
+    String? source,
+    DateTime? startAt,
+    DateTime? endAt,
+    String? sortBy,
+    String? sortOrder,
   }) async {
     final query = <String, String>{'limit': '$limit', 'offset': '$offset'};
     if (insurerCode != null && insurerCode.trim().isNotEmpty) {
@@ -135,6 +145,30 @@ class AdminGatewayService {
     }
     if (status != null && status.trim().isNotEmpty) {
       query['status'] = status.trim();
+    }
+    if (requestId != null && requestId.trim().isNotEmpty) {
+      query['requestId'] = requestId.trim();
+    }
+    if (customerReference != null && customerReference.trim().isNotEmpty) {
+      query['customerReference'] = customerReference.trim();
+    }
+    if (code != null && code.trim().isNotEmpty) {
+      query['code'] = code.trim();
+    }
+    if (source != null && source.trim().isNotEmpty) {
+      query['source'] = source.trim();
+    }
+    if (startAt != null) {
+      query['startAt'] = startAt.toUtc().toIso8601String();
+    }
+    if (endAt != null) {
+      query['endAt'] = endAt.toUtc().toIso8601String();
+    }
+    if (sortBy != null && sortBy.trim().isNotEmpty) {
+      query['sortBy'] = sortBy.trim();
+    }
+    if (sortOrder != null && sortOrder.trim().isNotEmpty) {
+      query['sortOrder'] = sortOrder.trim();
     }
 
     final body = await _getJson(
@@ -204,6 +238,7 @@ class AdminGatewayService {
     final body = await _deleteJson(
       _baseUri.resolve('/v1/admin/discovery-records'),
       useAdminAuth: true,
+      useAdminWriteAuth: true,
     );
     return (body['removed'] as int?) ?? 0;
   }
@@ -230,7 +265,7 @@ class AdminGatewayService {
             'paymentDay': 5,
             'effectiveDate': '2024-01-01T00:00:00.000',
             'expiryDate': null,
-            'note': 'seed by admin dashboard',
+            'note': '後台產生示範紀錄',
           },
         ],
       },
@@ -240,10 +275,14 @@ class AdminGatewayService {
   Future<Map<String, dynamic>> _getJson(
     Uri uri, {
     bool useAdminAuth = false,
+    bool useAdminWriteAuth = false,
   }) async {
     final response = await _client.get(
       uri,
-      headers: _headers(useAdminAuth: useAdminAuth),
+      headers: _headers(
+        useAdminAuth: useAdminAuth,
+        useAdminWriteAuth: useAdminWriteAuth,
+      ),
     );
     return _parseResponse(response);
   }
@@ -251,10 +290,14 @@ class AdminGatewayService {
   Future<Map<String, dynamic>> _deleteJson(
     Uri uri, {
     bool useAdminAuth = false,
+    bool useAdminWriteAuth = false,
   }) async {
     final response = await _client.delete(
       uri,
-      headers: _headers(useAdminAuth: useAdminAuth),
+      headers: _headers(
+        useAdminAuth: useAdminAuth,
+        useAdminWriteAuth: useAdminWriteAuth,
+      ),
     );
     return _parseResponse(response);
   }
@@ -264,6 +307,7 @@ class AdminGatewayService {
     required Map<String, dynamic> payload,
     bool useAdminAuth = false,
     bool useGatewayAuth = false,
+    bool useAdminWriteAuth = false,
   }) async {
     final response = await _client.post(
       uri,
@@ -271,6 +315,7 @@ class AdminGatewayService {
         includeContentType: true,
         useAdminAuth: useAdminAuth,
         useGatewayAuth: useGatewayAuth,
+        useAdminWriteAuth: useAdminWriteAuth,
       ),
       body: jsonEncode(payload),
     );
@@ -281,6 +326,7 @@ class AdminGatewayService {
     bool includeContentType = false,
     bool useAdminAuth = false,
     bool useGatewayAuth = false,
+    bool useAdminWriteAuth = false,
   }) {
     final headers = <String, String>{'Accept': 'application/json'};
     if (includeContentType) {
@@ -289,6 +335,10 @@ class AdminGatewayService {
     final adminKey = adminApiKey?.trim() ?? '';
     if (useAdminAuth && adminKey.isNotEmpty) {
       headers['x-admin-api-key'] = adminKey;
+    }
+    final adminWriteKey = adminWriteApiKey?.trim() ?? '';
+    if (useAdminWriteAuth && adminWriteKey.isNotEmpty) {
+      headers['x-admin-write-api-key'] = adminWriteKey;
     }
     final gatewayKey = gatewayApiKey?.trim() ?? '';
     if (useGatewayAuth && gatewayKey.isNotEmpty) {

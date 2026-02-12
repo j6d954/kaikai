@@ -277,6 +277,39 @@ void main() {
           .toList();
       expect(items.any((item) => item['id'] == createdId), isTrue);
 
+      final filteredResponse = await client.get(
+        gateway.baseUri.resolve(
+          '/v1/admin/discovery-records?customerReference=cust-admin-001&source=local_fallback',
+        ),
+      );
+      expect(filteredResponse.statusCode, HttpStatus.ok);
+      final filteredBody =
+          jsonDecode(filteredResponse.body) as Map<String, dynamic>;
+      final filteredItems = (filteredBody['items'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      expect(
+        filteredItems.every(
+          (item) => item['customerReference'] == 'cust-admin-001',
+        ),
+        isTrue,
+      );
+
+      final requestIdResponse = await client.get(
+        gateway.baseUri.resolve(
+          '/v1/admin/discovery-records?requestId=$createdId',
+        ),
+      );
+      expect(requestIdResponse.statusCode, HttpStatus.ok);
+      final requestIdBody =
+          jsonDecode(requestIdResponse.body) as Map<String, dynamic>;
+      final requestItems = (requestIdBody['items'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      expect(requestItems.any((item) => item['id'] == createdId), isTrue);
+
       final getResponse = await client.get(
         gateway.baseUri.resolve('/v1/admin/discovery-records/$createdId'),
       );
@@ -367,6 +400,42 @@ void main() {
       expect(listResponse.statusCode, HttpStatus.ok);
       final listBody = jsonDecode(listResponse.body) as Map<String, dynamic>;
       expect(listBody['total'], 0);
+    } finally {
+      client.close();
+      await gateway.stop();
+    }
+  });
+
+  test('admin delete requires write key when configured', () async {
+    final gateway = await _startGateway(
+      extraEnv: {'GATEWAY_ADMIN_WRITE_API_KEY': 'write-secret'},
+    );
+    final client = http.Client();
+
+    try {
+      final createResponse = await client.post(
+        gateway.baseUri.resolve('/v1/insurers/cathay/policies/discovery'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'customerReference': 'cust-admin-write-001',
+          'knownPolicies': [],
+        }),
+      );
+      expect(createResponse.statusCode, HttpStatus.ok);
+
+      final unauthorizedDelete = await client.delete(
+        gateway.baseUri.resolve('/v1/admin/discovery-records'),
+      );
+      expect(unauthorizedDelete.statusCode, HttpStatus.unauthorized);
+      final unauthorizedBody =
+          jsonDecode(unauthorizedDelete.body) as Map<String, dynamic>;
+      expect(unauthorizedBody['code'], 'admin_write_unauthorized');
+
+      final authorizedDelete = await client.delete(
+        gateway.baseUri.resolve('/v1/admin/discovery-records'),
+        headers: {'x-admin-write-api-key': 'write-secret'},
+      );
+      expect(authorizedDelete.statusCode, HttpStatus.ok);
     } finally {
       client.close();
       await gateway.stop();
